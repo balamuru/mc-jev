@@ -121,12 +121,12 @@ Options: `--trials N` (default 8), `--scenarios a,b,c` (default all), `--label N
 
 These are for Phase 7 and later work. The findings so far are in [tuning.md](tuning.md).
 
-| Command                               | What it does                                                                                                                                                                                                        | Cost                                   |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| `npm run eval:jev`                    | Runs the Jev question set on 17 labeled situations with the real API and reports which expectations held. Rerun it after changing a question in `src/strategic/questions.ts`.                                       | about $0.0006                          |
-| `npm run benchmark:survival -- --jev` | The survival benchmark with the bot asking the real API, then a summary of its decisions (outcomes, latency, cost).                                                                                                 | about $0.02 for a full run             |
-| `npm run benchmark:squad`             | Three bots against a wave of zombies in each swarm mode. Options: `--trials N`, `--modes independent,cooperative,coordinated`, `--wave N`, `--jev`, `--label NAME`. Reports time to clear, squad damage and deaths. | free without `--jev`; about $0.03 with |
-| `npm run analyze:decisions`           | Summarizes the decision logs in `logs/`: outcomes, latency percentiles and a suggested timeout, cost, how confident Jev was per tactic, and how often it really differed from the rules.                            | free                                   |
+| Command                               | What it does                                                                                                                                                                                                                                                                                                                                               | Cost                                   |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `npm run eval:jev`                    | Runs the Jev question set on 17 labeled situations with the real API and reports which expectations held. Rerun it after changing a question in `src/strategic/questions.ts`.                                                                                                                                                                              | about $0.0006                          |
+| `npm run benchmark:survival -- --jev` | The survival benchmark with the bot asking the real API, then a summary of its decisions (outcomes, latency, cost).                                                                                                                                                                                                                                        | about $0.02 for a full run             |
+| `npm run benchmark:squad`             | Three bots against a wave of mobs in each swarm mode. Options: `--trials N`, `--modes independent,cooperative,coordinated`, `--wave zombie:8,skeleton:2` (the default; a plain number means that many zombies), `--bows N` (bots that also carry a bow, default 1), `--no-roles`, `--jev`, `--label NAME`. Reports time to clear, squad damage and deaths. | free without `--jev`; about $0.03 with |
+| `npm run analyze:decisions`           | Summarizes the decision logs in `logs/`: outcomes, latency percentiles and a suggested timeout, cost, how confident Jev was per tactic, and how often it really differed from the rules.                                                                                                                                                                   | free                                   |
 
 ### Decision log
 
@@ -155,15 +155,17 @@ tail -f logs/decisions-*.jsonl | jq -c '{agent, trigger, outcome, why, intent: .
 
 ### Swarm
 
-| Setting                                                  | Meaning                                                                                                      | Default            |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------ |
-| `swarm.mode`                                             | `independent`, `cooperative` or `coordinated` (see [architecture.md](architecture.md#swarm-modes-swarmmode)) | `cooperative`      |
-| `swarm.claimTtlMs`                                       | A target claim lapses after this long without being refreshed                                                | 8000               |
-| `swarm.helpHp`                                           | An ally at or below this HP that was hit in the last 5 seconds counts as needing help                        | 8                  |
-| `swarm.helpAllies`                                       | Bots go to the aid of an ally in trouble                                                                     | true               |
-| `swarm.coordinator.intervalMs`                           | How often the coordinator looks at the situation                                                             | 4000               |
-| `swarm.coordinator.directiveTtlMs`                       | How long a focus directive holds                                                                             | 6000               |
-| `swarm.coordinator.model`, `swarm.coordinator.timeoutMs` | Jev model and timeout for the coordinator                                                                    | `jev-latest`, 1500 |
+| Setting                                                  | Meaning                                                                                                      | Default                   |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------- |
+| `swarm.mode`                                             | `independent`, `cooperative` or `coordinated` (see [architecture.md](architecture.md#swarm-modes-swarmmode)) | `cooperative`             |
+| `swarm.claimTtlMs`                                       | A target claim lapses after this long without being refreshed                                                | 8000                      |
+| `swarm.helpHp`                                           | An ally at or below this HP that was hit in the last 5 seconds counts as needing help                        | 8                         |
+| `swarm.helpAllies`                                       | Bots go to the aid of an ally in trouble                                                                     | true                      |
+| `swarm.coordinator.intervalMs`                           | How often the coordinator looks at the situation                                                             | 4000                      |
+| `swarm.coordinator.directiveTtlMs`                       | How long a focus directive holds                                                                             | 6000                      |
+| `swarm.coordinator.model`, `swarm.coordinator.timeoutMs` | Jev model and timeout for the coordinator                                                                    | `jev-latest`, 1500        |
+| `swarm.coordinator.assignRoles`                          | The coordinator also assigns each bot a role (by Jev, or by gear without it)                                 | true                      |
+| `swarm.coordinator.thresholds`                           | `act` and `cautious` confidence for the coordinator's answers                                                | `defaults.jev.thresholds` |
 
 ### Debugging
 
@@ -208,14 +210,14 @@ tail -f logs/decisions-*.jsonl | jq -c '{agent, trigger, outcome, why, intent: .
 
 ### Bots
 
-| Setting            | Meaning                                                                                        | Default   |
-| ------------------ | ---------------------------------------------------------------------------------------------- | --------- |
-| `bots[].username`  | Username: 3–16 letters, digits or `_`. Must be unique.                                         | `JevBot`  |
-| `bots[].role`      | `fighter`, `tank`, `ranged`, `support` or `scout`                                              | `fighter` |
-| `bots[].owner`     | Your Minecraft name. Only this player can give the bot chat commands.                          | none      |
-| `bots[].allies`    | Players this bot must never attack, in addition to its owner and every other bot in the config | none      |
-| `bots[].mode`      | What the bot does until told otherwise: `guard`, `hunt` or `idle`                              | `guard`   |
-| `bots[].overrides` | Any `perception`, `reflex`, `rules`, `strategic` or `jev` settings for this bot only           | none      |
+| Setting            | Meaning                                                                                                                                                                                                                 | Default   |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| `bots[].username`  | Username: 3–16 letters, digits or `_`. Must be unique.                                                                                                                                                                  | `JevBot`  |
+| `bots[].role`      | `fighter`, `tank`, `ranged`, `support` or `scout`. Changes how the bot fights in a swarm (see [architecture.md](architecture.md#roles-botsrole-srccontrolrolests)); a coordinator's assignment replaces it for a while. | `fighter` |
+| `bots[].owner`     | Your Minecraft name. Only this player can give the bot chat commands.                                                                                                                                                   | none      |
+| `bots[].allies`    | Players this bot must never attack, in addition to its owner and every other bot in the config                                                                                                                          | none      |
+| `bots[].mode`      | What the bot does until told otherwise: `guard`, `hunt` or `idle`                                                                                                                                                       | `guard`   |
+| `bots[].overrides` | Any `perception`, `reflex`, `rules`, `strategic` or `jev` settings for this bot only                                                                                                                                    | none      |
 
 To run a squad, list several bots and set the swarm mode. Every bot in the list is protected from every other (they never attack each other):
 

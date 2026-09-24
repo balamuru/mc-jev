@@ -20,6 +20,8 @@ export interface AllyInfo {
   hp: number;
   lastHeartbeat: number;
   lastDamagedAt: number | null;
+  armorPoints: number;
+  canShoot: boolean;
 }
 
 export interface ThreatInfo {
@@ -55,6 +57,7 @@ export class Blackboard {
   private readonly threats = new Map<number, { info: ThreatInfo; seenBy: Map<string, number> }>();
   private readonly claims = new Map<number, ClaimInfo>();
   private directive: { focusTargetId: number; expiresAt: number } | null = null;
+  private readonly roles = new Map<string, { role: string; expiresAt: number }>();
   private readonly now: () => number;
   private readonly threatTtlMs: number;
   private readonly allyTtlMs: number;
@@ -119,6 +122,12 @@ export class Blackboard {
     return this.directive?.focusTargetId ?? null;
   }
 
+  /** The role the coordinator assigned to this bot, if an assignment is still in force. */
+  assignedRole(agent: string): string | null {
+    this.prune();
+    return this.roles.get(agent)?.role ?? null;
+  }
+
   /** The nearest ally that is hurt and was hit recently, if any is at or below `helpHp`. */
   helpNeededBy(
     agent: string,
@@ -178,6 +187,8 @@ export class Blackboard {
           hp: e.hp,
           lastHeartbeat: e.at,
           lastDamagedAt: prev?.lastDamagedAt ?? null,
+          armorPoints: e.armorPoints ?? 0,
+          canShoot: e.canShoot ?? false,
         });
         break;
       }
@@ -195,10 +206,15 @@ export class Blackboard {
       case 'died':
       case 'left':
         this.allies.delete(e.agent);
+        if (e.type === 'left') this.roles.delete(e.agent);
         for (const [id, claim] of this.claims) if (claim.agent === e.agent) this.claims.delete(id);
         break;
       case 'directive':
         this.directive = { focusTargetId: e.focusTargetId, expiresAt: e.at + e.ttlMs };
+        break;
+      case 'roles':
+        for (const [agent, role] of Object.entries(e.roles))
+          this.roles.set(agent, { role, expiresAt: e.at + e.ttlMs });
         break;
       default:
         break; // claim / release events are records; the maps are updated by tryClaim / release
@@ -238,5 +254,6 @@ export class Blackboard {
           if (t - seen > this.threatTtlMs) entry.seenBy.delete(agent);
     }
     if (this.directive && t >= this.directive.expiresAt) this.directive = null;
+    for (const [agent, r] of this.roles) if (t >= r.expiresAt) this.roles.delete(agent);
   }
 }

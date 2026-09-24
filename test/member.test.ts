@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { Role } from '../src/control/roles.js';
 import { IDLE, type Intent } from '../src/intent.js';
 import type { Snapshot } from '../src/perception/types.js';
 import { Blackboard } from '../src/swarm/blackboard.js';
@@ -13,10 +14,13 @@ function squad(mode: SwarmMode = 'cooperative') {
   const events: SwarmEvent[] = [];
   bus.subscribe('*', (e) => void events.push(e));
   const board = new Blackboard(bus, { claimTtlMs: 8000, now: () => clock.t });
-  const member = (agent: string, over: { helpAllies?: boolean; mode?: SwarmMode } = {}) =>
+  const member = (
+    agent: string,
+    over: { helpAllies?: boolean; mode?: SwarmMode; role?: Role } = {},
+  ) =>
     new SwarmMember({
       agent,
-      role: 'fighter',
+      role: over.role ?? 'fighter',
       mode: over.mode ?? mode,
       bus,
       board,
@@ -47,6 +51,8 @@ describe('SwarmMember reporting', () => {
         role: 'fighter',
         position: { x: 5, y: 64, z: 0 },
         hp: 17,
+        armorPoints: 15,
+        canShoot: false,
       },
     ]);
     clock.t += 1000;
@@ -186,5 +192,72 @@ describe('SwarmMember views', () => {
     expect(a.helpNeeded({ x: 0, y: 64, z: 0 })).toMatchObject({ agent: 'B', position: { x: 12 } });
     c.observe(at(snap(20, []), 3), IDLE);
     expect(c.helpNeeded({ x: 3, y: 64, z: 0 })).toBeNull();
+  });
+});
+
+describe('SwarmMember roles', () => {
+  it('uses its configured role outside coordinated mode, even if one was assigned', () => {
+    const { member, bus, clock } = squad('cooperative');
+    const a = member('A', { role: 'support' });
+    bus.publish({ type: 'roles', at: clock.t, ttlMs: 5000, roles: { A: 'tank' } });
+    expect(a.role()).toBe('support');
+  });
+
+  it('takes the coordinator’s assignment in coordinated mode until it lapses', () => {
+    const { member, bus, clock } = squad('coordinated');
+    const a = member('A', { role: 'fighter' });
+    bus.publish({ type: 'roles', at: clock.t, ttlMs: 5000, roles: { A: 'tank' } });
+    expect(a.role()).toBe('tank');
+    clock.t += 5000;
+    expect(a.role()).toBe('fighter');
+  });
+
+  it('ignores an assignment that is not a known role', () => {
+    const { member, bus, clock } = squad('coordinated');
+    const a = member('A', { role: 'scout' });
+    bus.publish({ type: 'roles', at: clock.t, ttlMs: 5000, roles: { A: 'wizard' } });
+    expect(a.role()).toBe('scout');
+  });
+
+  it('reports its role, armor and bow in the heartbeat', () => {
+    const { member, events } = squad();
+    const s = snap(20, [], { armor: [], weapon: null });
+    member('A', { role: 'ranged' }).observe({ ...s, inventory: ['bowx1', 'arrowx5'] }, IDLE);
+    expect(events.find((e) => e.type === 'heartbeat')).toMatchObject({
+      role: 'ranged',
+      armorPoints: 0,
+      canShoot: true,
+    });
+  });
+
+  it('as a scout, reports a new threat at once instead of waiting for the next heartbeat', () => {
+    const { member, events, clock } = squad();
+    const scout = member('S', { role: 'scout' });
+    const fighter = member('F');
+    scout.observe(snap(20, []), IDLE);
+    fighter.observe(snap(20, []), IDLE);
+    clock.t += 100;
+    scout.observe(snap(20, [mob(1, 10)]), IDLE);
+    fighter.observe(snap(20, [mob(2, 10)]), IDLE);
+    const reports = events.filter((e) => e.type === 'threats');
+    expect(reports).toHaveLength(1);
+    expect(reports[0]).toMatchObject({ agent: 'S' });
+    // The same threat is not reported again before the heartbeat.
+    clock.t += 100;
+    scout.observe(snap(20, [mob(1, 9)]), IDLE);
+    expect(events.filter((e) => e.type === 'threats')).toHaveLength(1);
+  });
+
+  it('lists the other bots, and answers calls for help at a raised threshold', () => {
+    const { member, clock } = squad();
+    const a = member('A');
+    const b = member('B');
+    a.observe(at(snap(20, []), 0), IDLE);
+    b.observe(at(snap(20, []), 10), IDLE);
+    clock.t += 100;
+    b.observe(at(snap(20, []), 10, 11), IDLE); // hit down to 11 HP
+    expect(a.allies()).toEqual([{ agent: 'B', position: { x: 10, y: 64, z: 0 }, hp: 11 }]);
+    expect(a.helpNeeded({ x: 0, y: 64, z: 0 })).toBeNull(); // helpHp 8
+    expect(a.helpNeeded({ x: 0, y: 64, z: 0 }, 4)?.agent).toBe('B');
   });
 });

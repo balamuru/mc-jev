@@ -15,8 +15,19 @@ export interface SeenThreat {
 }
 
 export type SwarmEvent =
-  /** A bot's periodic "here I am". */
-  | { type: 'heartbeat'; agent: string; at: number; role: string; position: Position; hp: number }
+  /** A bot's periodic "here I am", with what the coordinator needs to assign roles. */
+  | {
+      type: 'heartbeat';
+      agent: string;
+      at: number;
+      role: string;
+      position: Position;
+      hp: number;
+      /** Armor points worn (0-20). */
+      armorPoints?: number;
+      /** Has a bow and arrows. */
+      canShoot?: boolean;
+    }
   /** Hostiles a bot can see right now, with where they are. */
   | { type: 'threats'; agent: string; at: number; threats: SeenThreat[] }
   /** A bot lost HP. */
@@ -27,6 +38,8 @@ export type SwarmEvent =
   | { type: 'died'; agent: string; at: number }
   | { type: 'left'; agent: string; at: number }
   /** The coordinator's order: the whole squad should focus on this target for a while. */
-  | { type: 'directive'; at: number; ttlMs: number; focusTargetId: number };
+  | { type: 'directive'; at: number; ttlMs: number; focusTargetId: number }
+  /** The coordinator's role assignments, by bot name. Each lapses after `ttlMs`. */
+  | { type: 'roles'; at: number; ttlMs: number; roles: Record<string, string> };
 
 export type SwarmEventType = SwarmEvent['type'];

@@ -3,6 +3,7 @@ import type { Snapshot, Vec3Like } from '../perception/types.js';
 import { distance } from '../perception/geometry.js';
 import { decideByRules, threatsIn, type RuleSettings } from '../reflex/rules.js';
 import type { SwarmView } from '../swarm/member.js';
+import { SCOUT_WANDER_FACTOR, SUPPORT_EXTRA_HELP_HP, applyRole } from './roles.js';
 import { HELP_TEXT, type Command } from './commands.js';
 
 export type ModeName = 'guard' | 'hunt' | 'idle' | 'follow';
@@ -129,9 +130,34 @@ export class ModeController {
     }
   }
 
-  /** Combat by the rules, adjusted for the squad: focus fire, and not piling onto a claimed target. */
+  /**
+   * Combat by the rules, adjusted for the squad (focus fire, not piling onto a claimed target) and
+   * then for the bot's role.
+   */
   private combat(snapshot: Snapshot, previous: Intent, rules = this.opts.rules): Intent {
-    return this.squadAdjusted(snapshot, decideByRules(snapshot, rules, previous), rules);
+    const squad = this.squadAdjusted(snapshot, decideByRules(snapshot, rules, previous), rules);
+    return this.withRole(snapshot, squad, previous, rules);
+  }
+
+  /**
+   * Apply the bot's squad role to a combat intent that came from elsewhere (Jev's override), so a
+   * confident Jev answer does not undo the role. Without a swarm, or for other intents, unchanged.
+   */
+  withRole(snapshot: Snapshot, intent: Intent, previous: Intent, rules = this.opts.rules): Intent {
+    const swarm = this.opts.swarm;
+    if (!swarm || intent.tactic !== 'engage') return intent;
+    const role = swarm.role();
+    if (role === 'fighter' || role === 'scout') return intent;
+    return applyRole({
+      role,
+      snapshot,
+      threats: threatsIn(snapshot, rules),
+      intent,
+      previous,
+      allies: swarm.allies(),
+      help:
+        role === 'support' ? swarm.helpNeeded(snapshot.self.position, SUPPORT_EXTRA_HELP_HP) : null,
+    });
   }
 
   private squadAdjusted(snapshot: Snapshot, intent: Intent, rules: RuleSettings): Intent {
@@ -166,7 +192,9 @@ export class ModeController {
 
   /** With nothing to fight, go to an ally who is hurt and under attack. */
   private helpIntent(snapshot: Snapshot): Intent | null {
-    const help = this.opts.swarm?.helpNeeded(snapshot.self.position);
+    const swarm = this.opts.swarm;
+    const extra = swarm?.role() === 'support' ? SUPPORT_EXTRA_HELP_HP : 0;
+    const help = swarm?.helpNeeded(snapshot.self.position, extra);
     if (!help) return null;
     return { tactic: 'goto', position: help.position, reason: `going to help ${help.agent}` };
   }
@@ -215,12 +243,13 @@ export class ModeController {
     const stale =
       !w || t - w.chosenAt > WANDER_RETHINK_MS || distance(here, w.target) < ARRIVED_BLOCKS;
     if (stale) {
+      const reach = WANDER_BLOCKS * (this.opts.swarm?.role() === 'scout' ? SCOUT_WANDER_FACTOR : 1);
       const angle = this.rng() * 2 * Math.PI;
       this.wander = {
         target: {
-          x: Math.round(here.x + Math.cos(angle) * WANDER_BLOCKS),
+          x: Math.round(here.x + Math.cos(angle) * reach),
           y: Math.round(here.y),
-          z: Math.round(here.z + Math.sin(angle) * WANDER_BLOCKS),
+          z: Math.round(here.z + Math.sin(angle) * reach),
         },
         chosenAt: t,
       };

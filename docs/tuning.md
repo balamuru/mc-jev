@@ -69,6 +69,27 @@ Measured over about 1,500 real calls through OpenRouter:
 
 Phase 8 made bots swing only as critical hits when another player is within 2 blocks of their target, so they can't hurt each other with sword sweeps. Squad bots often stand next to each other's targets, so this affects them. One rerun of `cooperative`, rules only, 8 trials: all waves cleared, no deaths, 10.2 seconds to clear (was 9.6) and squad damage 9.3 (was 7.9). The damage average includes one outlier trial of 25; the median was 8.3. So bots are a little slower, and no longer hurt each other.
 
+### Roles (Phase 10)
+
+**Question:** do roles help a coordinated squad?
+
+**Method:** a harder wave than before: 8 zombies and 2 skeletons in a ring 8 blocks away. Three bots in iron gear, and the third also carries a bow and 64 arrows. 20 trials per row. `--no-roles` turns role assignment off, so the coordinator only picks focus targets. Rules only, the coordinator assigns roles by gear, so it made the archer `ranged` and one of the others `tank`. With Jev, Jev picked the roles; the archer was nearly always `ranged` and about half the time another bot was `tank`.
+
+| Configuration                | Seconds to clear | Squad HP lost | Deaths | Waves not cleared in 60 s |
+| ---------------------------- | ---------------- | ------------- | ------ | ------------------------- |
+| cooperative, rules only      | 15.0 ± 0.4       | 23.3 ± 1.1    | 0      | 0                         |
+| coordinated, no roles, rules | 15.4 ± 0.4       | 24.0 ± 1.2    | 1      | 0                         |
+| coordinated, roles by gear   | 22.7 ± 1.1       | 23.0 ± 1.3    | 0      | 0                         |
+| coordinated, no roles, Jev   | 16.6 ± 0.5       | 27.2 ± 1.3    | 1      | 0                         |
+| coordinated, roles from Jev  | 24.6 ± 1.4       | 20.3 ± 1.4    | 0      | 1                         |
+
+- **With Jev, roles cut squad damage by a quarter** (27.2 → 20.3, about 3.6 standard errors), and no bot died.
+- **Without Jev, roles made no measurable difference to damage** (24.0 → 23.0, within noise), with no deaths against one.
+- **Roles make the squad slower**, by about half, probably because the ranged bot spends time backing away from zombies instead of fighting them (not measured separately). One wave with Jev’s roles was not cleared within 60 seconds (no bot died in it).
+- **So `swarm.coordinator.assignRoles` defaults to on.** Under the agreed rule (squad damage lower, nobody dying more often) it passes both with and without Jev, clearly so with Jev. `swarm.mode` stays `cooperative`: coordinated with roles and no Jev is no better than cooperative (23.0 against 23.3) and slower.
+- **Jev without roles was the worst row** (27.2): the focus directive again did not help, as in the first squad runs.
+- The two Jev runs cost $0.18 in total (40 trials of three bots plus the coordinator).
+
 ## A bug the experiments found
 
 The first Jev squad run **crashed the whole process**: the SDK leaves a rejection nobody is listening to whenever a call is cancelled, or times out, while its response is still arriving, and Node treats that as fatal. It only shows up under load. It was reproduced against a slow local server, and `installAbortGuard` now swallows exactly those abort-type rejections. See [architecture.md](architecture.md#jev-integration).
@@ -76,7 +97,6 @@ The first Jev squad run **crashed the whole process**: the SDK leaves a rejectio
 ## Not done, and worth trying
 
 - **More trials.** 8 per cell can only detect big effects. Use `--trials 20` or more before trusting a difference of a few percent.
-- **A harder squad test.** The wave (six zombies against three geared bots) may be too easy to show what the coordinator is for. Try more mobs, less gear, or skeletons.
 - **Retreat with a destination.** The survival benchmark showed fleeing on foot is harmful; running to a known safe spot might not be.
 - **Question wording for `ignore`.** Jev's `ignore` answers were low confidence (mean 36%), so they rarely change anything.
 - **Confidence thresholds.** `act` 0.7 and `cautious` 0.5 are unchanged. In the squad run, Jev's engage answers averaged 69% confidence with 444 of 753 at or above `act`, so the thresholds are working, but nothing tested a different value.

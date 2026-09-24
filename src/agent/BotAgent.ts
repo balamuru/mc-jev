@@ -281,6 +281,7 @@ export class BotAgent {
       },
       actuator,
       decide: (snapshot, previous) => modes.decide(snapshot, previous),
+      adjustOverride: (snapshot, intent, previous) => modes.withRole(snapshot, intent, previous),
       onIntent: (next, prev) =>
         this.log.info(`intent ${prev.tactic} -> ${next.tactic}: ${next.reason}`),
       onError: (err) => this.log.error(`reflex error: ${errorMessage(err)}`),

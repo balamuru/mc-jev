@@ -104,7 +104,9 @@ Bots share observations and target claims through a `Bus` and a `Blackboard` (`s
 
 - **independent:** bots ignore each other.
 - **cooperative (default):** bots claim targets so that they do not all pile onto one, help a hurt ally that was hit recently, and tell Jev about the squad.
-- **coordinated:** as cooperative, plus an optional coordinator that asks Jev which threat the whole squad should focus on. A bot never depends on it: without a current directive, it chooses for itself.
+- **coordinated:** as cooperative, plus an optional coordinator that asks Jev which threat the whole squad should focus on and, with `swarm.coordinator.assignRoles`, which role each bot should take (by gear when Jev is unavailable). A bot never depends on it: without a current directive or assignment, it chooses for itself and uses its configured role.
+
+**Roles** change behavior in a swarm (Phase 10): a `tank` covers the most hurt ally, a `support` goes to hurt allies first, a `scout` wanders farther and reports threats at once, and a `ranged` bot keeps its distance and shoots archers and creepers first. `fighter` is the default.
 
 The owner, allies and every other bot in the config are never attacked (see FR-7).
 

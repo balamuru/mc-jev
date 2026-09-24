@@ -256,6 +256,8 @@ describe('ModeController in a squad', () => {
       claimedByOthers: () => new Set(),
       focusTarget: () => null,
       helpNeeded: () => null,
+      role: () => 'fighter',
+      allies: () => [],
       ...view,
     };
     const modes = new ModeController({
@@ -331,6 +333,42 @@ describe('ModeController in a squad', () => {
     const { modes, decide } = squadMode({ helpNeeded: () => help });
     modes.apply(cmd('hunt'), at(0, 0, 0), null);
     expect(decide(world([])).reason).toBe('going to help Bravo');
+  });
+
+  it('applies its role to combat: a tank covers a hurt ally', () => {
+    const hurt = { agent: 'Bravo', position: at(12, 64, 0), hp: 5 };
+    const { decide } = squadMode({ role: () => 'tank', allies: () => [hurt] });
+    const nearMe = mob(1, 3);
+    const nearBravo = mob(2, 12, { position: at(12, 64, -1) });
+    expect(decide(world([nearMe, nearBravo]))).toMatchObject({ tactic: 'engage', targetId: 2 });
+  });
+
+  it('applies its role to an intent from elsewhere (a Jev override)', () => {
+    const hurt = { agent: 'Bravo', position: at(12, 64, 0), hp: 5 };
+    const { modes } = squadMode({ role: () => 'tank', allies: () => [hurt] });
+    const s = world([mob(1, 3), mob(2, 12, { position: at(12, 64, -1) })]);
+    const jev: Intent = { tactic: 'engage', targetId: 1, reason: 'jev' };
+    expect(modes.withRole(s, jev, IDLE).targetId).toBe(2);
+    expect(modes.withRole(s, IDLE, IDLE)).toEqual(IDLE);
+  });
+
+  it('as support, answers calls for help at a raised threshold', () => {
+    let extra = -1;
+    const help = { agent: 'Bravo', position: at(30, 64, 5), hp: 11 };
+    const { modes, decide } = squadMode({
+      role: () => 'support',
+      helpNeeded: (_from, more = 0) => ((extra = more), help),
+    });
+    modes.apply(cmd('hunt'), at(0, 0, 0), null);
+    expect(decide(world([])).reason).toBe('going to help Bravo');
+    expect(extra).toBeGreaterThan(0);
+  });
+
+  it('as a scout, wanders twice as far when hunting', () => {
+    const { modes, decide } = squadMode({ role: () => 'scout' }, 'hunt');
+    modes.apply(cmd('hunt'), at(0, 64, 0), null);
+    const target = decide(world([], at(0, 64, 0))).position!;
+    expect(Math.hypot(target.x, target.z)).toBeCloseTo(2 * WANDER_BLOCKS, 0);
   });
 
   it('behaves exactly like a lone bot when there is no swarm', () => {

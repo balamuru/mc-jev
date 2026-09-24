@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Blackboard } from '../src/swarm/blackboard.js';
 import { InProcessBus } from '../src/swarm/bus.js';
-import { COORDINATOR_QUESTION_SET, Coordinator } from '../src/swarm/coordinator.js';
+import { COORDINATOR_QUESTION_SET, Coordinator, rolesByGear } from '../src/swarm/coordinator.js';
+import type { AllyInfo } from '../src/swarm/blackboard.js';
 import type { SwarmEvent } from '../src/swarm/events.js';
 import { JevGateway } from '../src/strategic/gateway.js';
 import { JevError, type JevAnswer } from '../src/strategic/jev.js';
@@ -15,7 +16,13 @@ const focus = (choice: string, confidence = 0.9): Record<string, JevAnswer> => (
   focus: { type: 'choice', choice, confidence, probabilities: {} } as unknown as JevAnswer,
 });
 
-function setup(reply: () => Record<string, JevAnswer> | Error = () => focus('t5')) {
+const role = (choice: string, confidence = 0.9): JevAnswer =>
+  ({ type: 'choice', choice, confidence, probabilities: {} }) as unknown as JevAnswer;
+
+function setup(
+  reply: () => Record<string, JevAnswer> | Error = () => focus('t5'),
+  assignRoles = false,
+) {
   const bus = new InProcessBus();
   const events: SwarmEvent[] = [];
   bus.subscribe('*', (e) => void events.push(e));
@@ -31,12 +38,18 @@ function setup(reply: () => Record<string, JevAnswer> | Error = () => focus('t5'
     gateway,
     board,
     bus,
-    settings: { intervalMs: 4000, directiveTtlMs: 6000, model: 'jev-latest', timeoutMs: 1500 },
+    settings: {
+      intervalMs: 4000,
+      directiveTtlMs: 6000,
+      model: 'jev-latest',
+      timeoutMs: 1500,
+      assignRoles,
+    },
     thresholds: { act: 0.7, cautious: 0.5 },
     log: { info() {}, warn: (m) => warnings.push(m), error() {} },
     decisions: { write: (e) => void entries.push(e) },
   });
-  const squad = (bots = 2, threats = 2) => {
+  const squad = (bots = 2, threats = 2, gear: Array<{ armor: number; bow: boolean }> = []) => {
     for (let i = 0; i < bots; i++) {
       bus.publish({
         type: 'heartbeat',
@@ -45,6 +58,8 @@ function setup(reply: () => Record<string, JevAnswer> | Error = () => focus('t5'
         role: 'fighter',
         position: { x: i * 3, y: 64, z: 0 },
         hp: 20 - i,
+        armorPoints: gear[i]?.armor ?? 15,
+        canShoot: gear[i]?.bow ?? false,
       });
     }
     bus.publish({
@@ -164,5 +179,138 @@ describe('Coordinator', () => {
     coordinator.stop();
     await vi.advanceTimersByTimeAsync(12_000);
     expect(requests).toHaveLength(1);
+  });
+
+  describe('role assignment', () => {
+    const gear = [
+      { armor: 15, bow: false },
+      { armor: 20, bow: false },
+      { armor: 5, bow: true },
+    ];
+
+    it('asks one role question per bot in the same request, offering ranged only with a bow', async () => {
+      const { coordinator, requests, squad } = setup(() => focus('t5'), true);
+      squad(3, 2, gear);
+      await coordinator.tick();
+      expect(requests).toHaveLength(1);
+      const q = requests[0]!.questions as Record<
+        string,
+        { criteria: object; instructions: string }
+      >;
+      expect(Object.keys(q)).toEqual(['focus', 'role_0', 'role_1', 'role_2']);
+      expect(Object.keys(q.role_0!.criteria)).toEqual(['fighter', 'tank', 'support']);
+      expect(Object.keys(q.role_2!.criteria)).toEqual(['fighter', 'tank', 'support', 'ranged']);
+      expect(q.role_1!.instructions).toContain('"Bot1"');
+      expect(requests[0]!.state).toMatchObject({
+        squad: [{ armor_points: 15, has_bow_and_arrows: false }, {}, { has_bow_and_arrows: true }],
+      });
+    });
+
+    it('asks about roles even with a single threat, but not about focus', async () => {
+      const { coordinator, requests, squad } = setup(() => ({}), true);
+      squad(2, 1);
+      await coordinator.tick();
+      expect(Object.keys(requests[0]!.questions)).toEqual(['role_0', 'role_1']);
+    });
+
+    it('applies confident, valid roles and ignores the rest', async () => {
+      const { coordinator, events, board, entries, squad } = setup(
+        () => ({
+          ...focus('t5'),
+          role_0: role('tank'),
+          role_1: role('support', 0.3), // not confident: ignored
+          role_2: role('ranged'),
+        }),
+        true,
+      );
+      squad(3, 2, gear);
+      await coordinator.tick();
+      expect(events.find((e) => e.type === 'roles')).toMatchObject({
+        ttlMs: 6000,
+        roles: { Bot0: 'tank', Bot2: 'ranged' },
+      });
+      expect(board.assignedRole('Bot0')).toBe('tank');
+      expect(board.assignedRole('Bot1')).toBeNull();
+      expect(entries[0]).toMatchObject({
+        outcome: 'applied',
+        why: 'squad focus on t5; roles: Bot0 tank, Bot2 ranged',
+      });
+      vi.advanceTimersByTime(6000);
+      expect(board.assignedRole('Bot0')).toBeNull();
+    });
+
+    it('never makes a bot without a bow ranged, whatever Jev says', async () => {
+      const { coordinator, events, squad } = setup(
+        () => ({ role_0: role('ranged'), role_1: role('wizard') }),
+        true,
+      );
+      squad(2, 1);
+      await coordinator.tick();
+      expect(events.some((e) => e.type === 'roles')).toBe(false);
+    });
+
+    it('assigns roles by gear when Jev is unavailable', async () => {
+      const { coordinator, events, entries, warnings, squad } = setup(
+        () => new JevError('timeout', 'slow'),
+        true,
+      );
+      squad(3, 1, gear);
+      await coordinator.tick();
+      expect(events.find((e) => e.type === 'roles')).toMatchObject({
+        roles: { Bot0: 'fighter', Bot1: 'tank', Bot2: 'ranged' },
+      });
+      expect(entries[0]).toMatchObject({ outcome: 'error', error: 'timeout' });
+      expect(entries[0]!.why).toContain('roles by gear');
+      expect(warnings[0]).toMatch(/roles are assigned by gear/);
+    });
+  });
+});
+
+describe('rolesByGear', () => {
+  const ally = (
+    agent: string,
+    armorPoints: number,
+    canShoot = false,
+    role = 'fighter',
+  ): AllyInfo => ({
+    agent,
+    role,
+    position: { x: 0, y: 64, z: 0 },
+    hp: 20,
+    lastHeartbeat: 0,
+    lastDamagedAt: null,
+    armorPoints,
+    canShoot,
+  });
+
+  it('makes the best-armored bot the tank and everyone else a fighter', () => {
+    expect(rolesByGear([ally('A', 8), ally('B', 20), ally('C', 15)])).toEqual({
+      A: 'fighter',
+      B: 'tank',
+      C: 'fighter',
+    });
+  });
+
+  it('makes the least-armored bot with a bow ranged, and picks the tank from the rest', () => {
+    expect(rolesByGear([ally('A', 20, true), ally('B', 10, true), ally('C', 15)])).toEqual({
+      A: 'tank',
+      B: 'ranged',
+      C: 'fighter',
+    });
+  });
+
+  it('breaks ties by name, and assigns nothing to a lone bot', () => {
+    expect(rolesByGear([ally('B', 15), ally('A', 15)])).toEqual({ A: 'tank', B: 'fighter' });
+    expect(rolesByGear([ally('A', 15)])).toEqual({});
+  });
+
+  it('on a tie, keeps a bot in the role it already has', () => {
+    // A picked up a bow mid-fight; C was already ranged, and B already the tank.
+    const squad = [
+      ally('A', 15, true),
+      ally('B', 15, false, 'tank'),
+      ally('C', 15, true, 'ranged'),
+    ];
+    expect(rolesByGear(squad)).toEqual({ A: 'fighter', B: 'tank', C: 'ranged' });
   });
 });

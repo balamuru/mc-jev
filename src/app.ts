@@ -71,7 +71,7 @@ export function buildApp(config: Config, deps: AppDeps = {}): App {
           board,
           bus,
           settings: config.swarm.coordinator,
-          thresholds: config.bots[0]!.jev.thresholds,
+          thresholds: config.swarm.coordinator.thresholds,
           log,
           decisions,
         })

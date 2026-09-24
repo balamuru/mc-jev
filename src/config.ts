@@ -132,6 +132,12 @@ const swarmSchema = z.object({
     directiveTtlMs: z.number().int().min(500),
     model: z.string().min(1),
     timeoutMs: z.number().int().min(50),
+    /** Also assign each bot a role for the fight (by Jev, or by gear without it). */
+    assignRoles: z.boolean().default(false),
+    /** Confidence thresholds for the coordinator's answers. Defaults to `defaults.jev.thresholds`. */
+    thresholds: thresholdsSchema
+      .refine((t) => t.cautious <= t.act, { message: 'cautious must be <= act' })
+      .optional(),
   }),
 });
 
@@ -196,10 +202,15 @@ export interface BotConfig extends AgentSettings {
   mode: ConfigFile['bots'][number]['mode'];
 }
 
+type Thresholds = z.infer<typeof thresholdsSchema>;
+
 export interface Config {
   server: ConfigFile['server'];
   gateway: ConfigFile['gateway'];
-  swarm: ConfigFile['swarm'];
+  /** The coordinator's thresholds are always resolved. */
+  swarm: ConfigFile['swarm'] & {
+    coordinator: ConfigFile['swarm']['coordinator'] & { thresholds: Thresholds };
+  };
   debug: ConfigFile['debug'];
   bots: BotConfig[];
   jevApi: { apiKey?: string; baseURL?: string };
@@ -266,7 +277,13 @@ export function parseConfig(raw: unknown, env: NodeJS.ProcessEnv = {}): Config {
   return {
     server,
     gateway: file.gateway,
-    swarm: file.swarm,
+    swarm: {
+      ...file.swarm,
+      coordinator: {
+        ...file.swarm.coordinator,
+        thresholds: file.swarm.coordinator.thresholds ?? file.defaults.jev.thresholds,
+      },
+    },
     debug: file.debug,
     bots,
     jevApi: {

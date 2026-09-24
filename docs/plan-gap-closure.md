@@ -118,6 +118,8 @@ The `ranged` role needs a bot that can fight with a bow. It is also useful on it
 - Run `cooperative` against `coordinated` with roles, 20 trials each, with and without Jev.
 - **Decision rule:** roles stay on in `coordinated` mode only if squad damage is lower and nobody dies more often. Either way, record the result in `docs/tuning.md`.
 
+**Result (done 2026-09-24):** on a harder wave (8 zombies and 2 skeletons, one bot with a bow), roles from Jev cut squad damage from 27.2 ± 1.3 to 20.3 ± 1.4 with no deaths (against one). Roles by gear, without Jev, made no measurable difference (24.0 against 23.0). Both meet the rule, so `swarm.coordinator.assignRoles` ships on; `swarm.mode` stays `cooperative`. Roles slow clearing by about half. The tank's shield and the scout's engagement delay were not built (shields are off, and the scout's report is synchronous).
+
 ## Phase 11: Test coverage and housekeeping (gaps 4, 6)
 
 - **Line of sight on real terrain.** Add an integration test that builds a wall with `/fill` between the bot and a zombie, and asserts:

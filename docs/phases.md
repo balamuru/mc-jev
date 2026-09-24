@@ -2,21 +2,21 @@
 
 Each phase ends with `npm run check` passing, the phase's integration scenario working where there is one, the docs updated, and a commit you have approved.
 
-| Phase | Scope                                         | Requirements     | Status  |
-| ----- | --------------------------------------------- | ---------------- | ------- |
-| 0     | Repo and scaffolding                          | FR-9             | Done    |
-| 1     | Server, connection and perception             | FR-1, FR-2       | Done    |
-| 2     | Reflex layer: rules-only fighter against mobs | FR-3             | Done    |
-| 2.5   | Survival hardening                            | FR-12            | Done    |
-| 3     | Jev strategic layer against mobs              | FR-4, FR-5, FR-8 | Done    |
-| 4     | Modes and chat commands                       | FR-6             | Done    |
-| 5     | Player combat                                 | FR-7             | Done    |
-| 6     | Multiple bots and swarm                       | FR-10, FR-11     | Done    |
-| 7     | Tuning (optional)                             | none             | Done    |
-| 8     | Shield and strafing against mobs              | FR-3             | Done    |
-| 9     | Bow combat                                    | FR-3             | Done    |
-| 10    | Roles that change behavior                    | FR-11            | Next    |
-| 11    | Test coverage and housekeeping                | FR-2, FR-7       | Planned |
+| Phase | Scope                                         | Requirements     | Status |
+| ----- | --------------------------------------------- | ---------------- | ------ |
+| 0     | Repo and scaffolding                          | FR-9             | Done   |
+| 1     | Server, connection and perception             | FR-1, FR-2       | Done   |
+| 2     | Reflex layer: rules-only fighter against mobs | FR-3             | Done   |
+| 2.5   | Survival hardening                            | FR-12            | Done   |
+| 3     | Jev strategic layer against mobs              | FR-4, FR-5, FR-8 | Done   |
+| 4     | Modes and chat commands                       | FR-6             | Done   |
+| 5     | Player combat                                 | FR-7             | Done   |
+| 6     | Multiple bots and swarm                       | FR-10, FR-11     | Done   |
+| 7     | Tuning (optional)                             | none             | Done   |
+| 8     | Shield and strafing against mobs              | FR-3             | Done   |
+| 9     | Bow combat                                    | FR-3             | Done   |
+| 10    | Roles that change behavior                    | FR-11            | Done   |
+| 11    | Test coverage and housekeeping                | FR-2, FR-7       | Next   |
 
 ## Phase 0: Repo and scaffolding
 
@@ -133,6 +133,17 @@ Phases 8 to 11 close the gaps a review of the implementation against the plan fo
 - **Deviations from the plan:** the bot does not back off from a melee mob while shooting; it switches to its sword under 6 blocks instead. It also does not prefer skeletons and creepers over nearer targets. Both belong to the `ranged` role in Phase 10.
 - **Tests:** unit tests for aiming, leading, shot safety, draw timing and weapon choice, actuator tests with a fake bot, and integration tests on a real server: kills a stationary target at 12 and 20 blocks, kills a skeleton, and never shoots while the owner stands in the line of fire.
 - **Result:** with the bow, every one of 60 benchmark trials was won, and damage fell in all three scenarios (for example 0.4 against 2.6 against a skeleton). About 73% of arrows hit a creeper or skeleton, and 97% hit zombies. **`rules.bow` ships on.** See [survival-benchmark.md](survival-benchmark.md#phase-9-bow-combat).
+
+## Phase 10: Roles that change behavior
+
+- **`src/control/roles.ts`:** a pure `applyRole` that adjusts a combat intent for the bot's role. A `tank` fights the threat closest to the most hurt ally. A `support` answers calls for help earlier (`helpHp` + 4) and goes to a hurt ally before taking a fresh target. A `scout` wanders twice as far and reports new threats at once. A `ranged` bot with a bow backs away from non-archers within 8 blocks (until 12), shoots archers and creepers first, and falls back to melee through the loop's failed-retreat check when cornered. `fighter` is unchanged.
+- **Where roles apply:** `ModeController` applies the role to every combat intent in a swarm, and the reflex loop applies it to Jev's overrides too (`adjustOverride`), so a confident Jev answer does not undo it.
+- **Coordinator:** in the same Jev request as the focus question, one `choice` per bot for its role (`ranged` offered only to a bot with a bow and arrows), held for `directiveTtlMs`, ignored below `cautious`. Without Jev it assigns roles by gear (`rolesByGear`), so coordinated mode works without a key. It asks about roles with a single threat, and about focus only with two or more. Heartbeats now carry armor points and whether the bot can shoot.
+- **Config:** `swarm.coordinator.assignRoles` (on) and `swarm.coordinator.thresholds` (default `defaults.jev.thresholds`); the coordinator no longer reads the first bot's thresholds.
+- **Squad benchmark:** a harder default wave (8 zombies and 2 skeletons), `--wave kind:count,...`, `--bows N`, `--no-roles`, and the roles in force are printed per trial.
+- **Deviations from the plan:** the tank does not keep its shield up, because Phase 8 left shields off. The scout does not wait before engaging: its report is sent synchronously in the same step, so a delay would add nothing.
+- **Tests:** unit tests for each role, the member's role and reporting, mode and loop integration, the coordinator's role questions, parsing, thresholds, fallback and expiry, and an integration test on a real server in which a coordinated squad without Jev gets roles by gear, the tank covers a hurt ally, and the ranged bot backs away and shoots.
+- **Result:** with Jev, roles cut squad damage by a quarter (27.2 → 20.3) with no deaths; without Jev they made no measurable difference (24.0 → 23.0). Both meet the rule, so `assignRoles` ships on. Roles make clearing about half again slower. See [tuning.md](tuning.md#roles-phase-10).
 
 ## Backlog (not scheduled)
 

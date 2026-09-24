@@ -18,7 +18,8 @@
       "intervalMs": 4000,
       "directiveTtlMs": 6000,
       "model": "jev-latest",
-      "timeoutMs": 1500
+      "timeoutMs": 1500,
+      "assignRoles": true
     }
   },
   "debug": {

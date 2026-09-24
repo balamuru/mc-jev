@@ -1,7 +1,9 @@
 import type { Intent } from '../intent.js';
 import type { Snapshot } from '../perception/types.js';
 import { distance } from '../perception/geometry.js';
-import { NEUTRAL_MOBS } from '../reflex/danger.js';
+import { isRole, type AllyView, type Role } from '../control/roles.js';
+import { canShoot } from '../reflex/bow.js';
+import { NEUTRAL_MOBS, armorPoints } from '../reflex/danger.js';
 import type { Blackboard, HelpRequest } from './blackboard.js';
 import type { Bus } from './bus.js';
 import type { Position } from './events.js';
@@ -14,8 +16,12 @@ export interface SwarmView {
   claimedByOthers(): ReadonlySet<number>;
   /** The squad's focus target, if the coordinator set one. */
   focusTarget(): number | null;
-  /** An ally in trouble that this bot could go and help. */
-  helpNeeded(from: Position): HelpRequest | null;
+  /** An ally in trouble that this bot could go and help, at `helpHp` plus `extraHp`. */
+  helpNeeded(from: Position, extraHp?: number): HelpRequest | null;
+  /** The bot's role: the coordinator's assignment while one is in force, else its configured role. */
+  role(): Role;
+  /** The other bots in the squad. */
+  allies(): AllyView[];
 }
 
 /** What Jev is told about the squad. */
@@ -28,7 +34,7 @@ export type SwarmContext = {
 
 export interface SwarmMemberOptions {
   agent: string;
-  role: string;
+  role: Role;
   mode: SwarmMode;
   bus: Bus;
   board: Blackboard;
@@ -49,6 +55,8 @@ export class SwarmMember implements SwarmView {
   private lastHp: number | null = null;
   private claimed: number | null = null;
   private position: Position = { x: 0, y: 0, z: 0 };
+  /** Threats already reported, so a scout can report new ones straight away. */
+  private reported = new Set<number>();
   private readonly now: () => number;
   private readonly heartbeatMs: number;
 
@@ -68,21 +76,29 @@ export class SwarmMember implements SwarmView {
     const t = this.now();
     this.position = snapshot.self.position;
 
-    if (t - this.lastBeat >= this.heartbeatMs) {
+    const threats = snapshot.entities
+      .filter((e) => e.category === 'hostile' && !NEUTRAL_MOBS.has(e.kind))
+      .map((e) => ({ id: e.id, kind: e.kind, position: e.position }));
+    const beat = t - this.lastBeat >= this.heartbeatMs;
+    // A scout's job is to spot: it reports a new threat at once instead of on the next heartbeat.
+    const spotted = this.role() === 'scout' && threats.some((e) => !this.reported.has(e.id));
+    if (beat) {
       this.lastBeat = t;
       bus.publish({
         type: 'heartbeat',
         agent,
         at: t,
-        role: this.opts.role,
+        role: this.role(),
         position: snapshot.self.position,
         hp: snapshot.self.hp,
+        armorPoints: armorPoints(snapshot.self.armor),
+        canShoot: canShoot(snapshot.inventory),
       });
-      const threats = snapshot.entities
-        .filter((e) => e.category === 'hostile' && !NEUTRAL_MOBS.has(e.kind))
-        .map((e) => ({ id: e.id, kind: e.kind, position: e.position }));
-      if (threats.length) bus.publish({ type: 'threats', agent, at: t, threats });
     }
+    if ((beat || spotted) && threats.length) {
+      bus.publish({ type: 'threats', agent, at: t, threats });
+    }
+    if (beat || spotted) this.reported = new Set(threats.map((e) => e.id));
 
     const hp = snapshot.self.hp;
     if (this.lastHp !== null && hp < this.lastHp - 0.4) {
@@ -113,9 +129,22 @@ export class SwarmMember implements SwarmView {
     return this.opts.mode === 'coordinated' ? this.opts.board.focusTarget() : null;
   }
 
-  helpNeeded(from: Position): HelpRequest | null {
+  helpNeeded(from: Position, extraHp = 0): HelpRequest | null {
     if (!this.active || !this.opts.helpAllies) return null;
-    return this.opts.board.helpNeededBy(this.opts.agent, from, this.opts.helpHp);
+    return this.opts.board.helpNeededBy(this.opts.agent, from, this.opts.helpHp + extraHp);
+  }
+
+  role(): Role {
+    if (this.opts.mode !== 'coordinated') return this.opts.role;
+    const assigned = this.opts.board.assignedRole(this.opts.agent);
+    return isRole(assigned) ? assigned : this.opts.role;
+  }
+
+  allies(): AllyView[] {
+    if (!this.active) return [];
+    return this.opts.board
+      .alliesOf(this.opts.agent)
+      .map((a) => ({ agent: a.agent, position: a.position, hp: a.hp }));
   }
 
   /** The squad as Jev should see it, or null when the bot works alone. */
@@ -142,6 +171,7 @@ export class SwarmMember implements SwarmView {
   died(): void {
     if (!this.active) return;
     this.claimed = null;
+    this.reported = new Set();
     this.lastHp = null;
     this.opts.bus.publish({ type: 'died', agent: this.opts.agent, at: this.now() });
   }

@@ -255,9 +255,30 @@ describe('swarm and server stagger settings', () => {
       claimTtlMs: 8000,
       helpHp: 8,
       helpAllies: true,
-      coordinator: { intervalMs: 4000, directiveTtlMs: 6000, model: 'jev-latest', timeoutMs: 1500 },
+      coordinator: {
+        intervalMs: 4000,
+        directiveTtlMs: 6000,
+        model: 'jev-latest',
+        timeoutMs: 1500,
+        assignRoles: true,
+        thresholds: cfg.bots[0]!.jev.thresholds,
+      },
     });
     expect(cfg.server.staggerMs).toBe(1000);
+  });
+
+  it('gives the coordinator its own thresholds, defaulting to the bots’ defaults', () => {
+    const raw = base();
+    raw.bots = [
+      { username: 'Alpha', overrides: { jev: { thresholds: { act: 0.95, cautious: 0.9 } } } },
+      { username: 'Bravo' },
+    ];
+    // Not the first bot's overrides: the defaults.
+    expect(parseConfig(raw).swarm.coordinator.thresholds).toEqual(raw.defaults.jev.thresholds);
+    raw.swarm.coordinator.thresholds = { act: 0.8, cautious: 0.6 };
+    expect(parseConfig(raw).swarm.coordinator.thresholds).toEqual({ act: 0.8, cautious: 0.6 });
+    raw.swarm.coordinator.thresholds = { act: 0.5, cautious: 0.6 };
+    expect(() => parseConfig(raw)).toThrow(/cautious must be <= act/);
   });
 
   it('accepts the three swarm modes and rejects anything else', () => {

@@ -86,6 +86,21 @@ describe('ReflexLoop', () => {
     expect(actuator.calls).toEqual(['engage 2', 'engage 1']);
   });
 
+  it('passes an override through adjustOverride each step', () => {
+    const actuator = new FakeActuator();
+    const state = { snap: snap(20, [mob(1, 5), mob(2, 9)]) };
+    const loop = new ReflexLoop({
+      everyTicks: 1,
+      rules: defaultRules,
+      read: () => state.snap,
+      actuator,
+      adjustOverride: (_s, intent) => ({ ...intent, targetId: 1, reason: 'role' }),
+    });
+    loop.setOverride({ tactic: 'engage', targetId: 2, reason: 'jev' }, 100);
+    loop.onTick();
+    expect(loop.intent).toMatchObject({ targetId: 1, reason: 'role' });
+  });
+
   it('can drop an override early', () => {
     const { state, tick, loop } = setup();
     state.snap = snap(20, [mob(1, 5), mob(2, 9)]);

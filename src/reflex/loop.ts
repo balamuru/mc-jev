@@ -34,6 +34,8 @@ export interface ReflexOptions {
    * supplies a mode-aware one (following, guarding, hunting, stopped).
    */
   decide?: (snapshot: Snapshot, previous: Intent) => Intent;
+  /** Adjusts an override's intent each step (the agent applies the bot's squad role to it). */
+  adjustOverride?: (snapshot: Snapshot, intent: Intent, previous: Intent) => Intent;
   onIntent?: (intent: Intent, previous: Intent) => void;
   onError?: (err: unknown) => void;
 }
@@ -117,7 +119,10 @@ export class ReflexLoop {
     }
 
     const decide = this.opts.decide ?? ((snap, prev) => decideByRules(snap, rules, prev));
-    const next = this.override?.intent ?? decide(snapshot, this.current);
+    const next = this.override
+      ? (this.opts.adjustOverride?.(snapshot, this.override.intent, this.current) ??
+        this.override.intent)
+      : decide(snapshot, this.current);
     if (next.tactic !== 'retreat' || next.targetId === undefined) {
       this.watch.reset();
       return next;
