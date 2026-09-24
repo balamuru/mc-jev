@@ -1,0 +1,19 @@
+{
+  "server": { "host": "localhost", "port": 25565, "version": false },
+  "gateway": { "maxCallsPerMinute": 60, "dailyBudgetUsd": 1.0 },
+  "defaults": {
+    "reflex": { "everyTicks": 1 },
+    "strategic": {
+      "intervalMs": 2000,
+      "eventTriggers": ["hurt", "newThreat", "lowHp"],
+      "minGapMs": 250
+    },
+    "jev": {
+      "model": "jev-latest",
+      "timeoutMs": 800,
+      "maxRetries": 0,
+      "thresholds": { "act": 0.7, "cautious": 0.5 }
+    }
+  },
+  "bots": [{ "username": "JevBot", "role": "fighter" }]
+}
