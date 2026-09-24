@@ -6,8 +6,8 @@ Each phase ends with `npm run check` passing, the phase's integration scenario w
 | ----- | --------------------------------------------- | ---------------- | ------- |
 | 0     | Repo and scaffolding                          | FR-9             | Done    |
 | 1     | Server, connection and perception             | FR-1, FR-2       | Done    |
-| 2     | Reflex layer: rules-only fighter against mobs | FR-3             | Next    |
-| 3     | Jev strategic layer against mobs              | FR-4, FR-5, FR-8 | Planned |
+| 2     | Reflex layer: rules-only fighter against mobs | FR-3             | Done    |
+| 3     | Jev strategic layer against mobs              | FR-4, FR-5, FR-8 | Next    |
 | 4     | Modes and chat commands                       | FR-6             | Planned |
 | 5     | Player combat                                 | FR-7             | Planned |
 | 6     | Multiple bots and swarm                       | FR-10, FR-11     | Planned |
@@ -35,7 +35,7 @@ Each phase ends with `npm run check` passing, the phase's integration scenario w
 
 ## Phase 2: Reflex layer against mobs
 
-- **Plugins:** `mineflayer-pvp`, `mineflayer-pathfinder`, `mineflayer-auto-eat` and `mineflayer-armor-manager`.
+- **Plugins:** `mineflayer-pathfinder`, `mineflayer-auto-eat` and `mineflayer-armor-manager`. `mineflayer-pvp` was dropped because it is unmaintained and uses a deprecated event, so combat is our own code.
 - **Reflex loop:** `reflex/loop.ts` runs every `everyTicks` game ticks.
 - **Rules:** `reflex/rules.ts` covers targeting the nearest hostile, retreating at low HP, and eating. This rules policy is also the fallback whenever Jev is unavailable.
 - **Tests:**

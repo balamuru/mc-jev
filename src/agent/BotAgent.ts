@@ -1,6 +1,9 @@
 import { createBot } from 'mineflayer';
 import type { BotConfig, Config } from '../config.js';
+import { IDLE, type Intent } from '../intent.js';
 import type { Snapshot } from '../perception/types.js';
+import { ReflexLoop, type Actuator } from '../reflex/loop.js';
+import { MineflayerActuator, attachPlugins } from './actuator.js';
 import { backoffDelayMs, type BackoffOptions } from './backoff.js';
 import { readSnapshot, type BotLike } from './mineflayerAdapter.js';
 
@@ -19,23 +22,33 @@ export interface AgentOptions {
   logger?: Logger;
   reconnect?: BackoffOptions;
   /** Bot factory, replaceable in tests. */
-  createBot?: (server: Config['server'], username: string) => BotLike;
+  createBot?: (server: Config['server'], config: BotConfig) => BotHandle;
+}
+
+/** A connected bot together with the object that drives it. */
+export interface BotHandle {
+  bot: BotLike;
+  actuator: Actuator;
 }
 
 const DEFAULT_RECONNECT: BackoffOptions = { baseMs: 1000, maxMs: 30_000 };
 
-export function createMineflayerBot(server: Config['server'], username: string): BotLike {
+export function createMineflayerBot(server: Config['server'], config: BotConfig): BotHandle {
   const bot = createBot({
     host: server.host,
     port: server.port,
-    username,
+    username: config.username,
     auth: 'offline',
     // Errors are logged once, by the agent, through its 'error' handler.
     logErrors: false,
     // `false` in config means auto-detect, which Mineflayer expresses by omitting the version.
     ...(server.version ? { version: server.version } : {}),
   });
-  return bot as unknown as BotLike;
+  // Plugins need the negotiated protocol version, so they load once the bot has spawned.
+  if (config.reflex.enabled) {
+    bot.once('spawn', () => attachPlugins(bot, config.rules));
+  }
+  return { bot: bot as unknown as BotLike, actuator: new MineflayerActuator(bot) };
 }
 
 /**
@@ -45,6 +58,7 @@ export function createMineflayerBot(server: Config['server'], username: string):
 export class BotAgent {
   private _state: AgentState = 'idle';
   private bot: BotLike | null = null;
+  private reflex: ReflexLoop | null = null;
   private attempt = 0;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private snapshotTimer: NodeJS.Timeout | null = null;
@@ -85,10 +99,17 @@ export class BotAgent {
     this.clearTimers();
     const bot = this.bot;
     this.bot = null;
+    this.reflex?.dispose();
+    this.reflex = null;
     bot?.removeAllListeners();
     // Swallow late errors from a bot we no longer track.
     bot?.on('error', () => {});
     bot?.quit('shutting down');
+  }
+
+  /** What the bot is currently trying to do. */
+  get intent(): Intent {
+    return this.reflex?.intent ?? IDLE;
   }
 
   /** Latest snapshot, or null when not spawned. */
@@ -101,14 +122,16 @@ export class BotAgent {
     this.log.info(`connecting to ${this.server.host}:${this.server.port}`);
     const make = this.options.createBot ?? createMineflayerBot;
     let bot: BotLike;
+    let actuator: Actuator;
     try {
-      bot = make(this.server, this.config.username);
+      ({ bot, actuator } = make(this.server, this.config));
     } catch (err) {
       this.log.error(`could not create bot: ${errorMessage(err)}`);
       this.scheduleReconnect();
       return;
     }
     this.bot = bot;
+    this.startReflex(bot, actuator);
 
     bot.on('spawn', () => {
       if (this.bot !== bot) return;
@@ -127,8 +150,27 @@ export class BotAgent {
       if (this.bot !== bot) return;
       this.log.warn(`disconnected${reason ? ` (${String(reason)})` : ''}`);
       this.bot = null;
+      this.reflex?.dispose();
+      this.reflex = null;
       this.scheduleReconnect();
     });
+  }
+
+  private startReflex(bot: BotLike, actuator: Actuator): void {
+    if (!this.config.reflex.enabled) return;
+    const reflex = new ReflexLoop({
+      everyTicks: this.config.reflex.everyTicks,
+      rules: this.config.rules,
+      read: () => this.snapshot(),
+      actuator,
+      onIntent: (next, prev) =>
+        this.log.info(`intent ${prev.tactic} -> ${next.tactic}: ${next.reason}`),
+      onError: (err) => this.log.error(`reflex error: ${errorMessage(err)}`),
+    });
+    this.reflex = reflex;
+    bot.on('physicsTick', () => reflex.onTick());
+    // After dying the bot respawns with a clean slate.
+    bot.on('death', () => reflex.dispose());
   }
 
   private scheduleReconnect(): void {

@@ -2,30 +2,36 @@ import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BotAgent, type Logger } from '../src/agent/BotAgent.js';
 import { parseConfig } from '../src/config.js';
-import { FakeBot } from './fakeBot.js';
+import { FakeActuator, FakeBot } from './fakeBot.js';
 
 const config = parseConfig(JSON.parse(readFileSync('config/default.json', 'utf8')));
 const botConfig = config.bots[0]!;
 
-function setup(extra: { snapshotIntervalMs?: number; onSnapshot?: () => void } = {}) {
+function setup(
+  extra: { snapshotIntervalMs?: number; onSnapshot?: () => void } = {},
+  cfg = botConfig,
+) {
   const bots: FakeBot[] = [];
+  const actuators: FakeActuator[] = [];
   const logs: string[] = [];
   const logger: Logger = {
     info: (m) => logs.push(`info ${m}`),
     warn: (m) => logs.push(`warn ${m}`),
     error: (m) => logs.push(`error ${m}`),
   };
-  const agent = new BotAgent(botConfig, config.server, {
+  const agent = new BotAgent(cfg, config.server, {
     logger,
     reconnect: { baseMs: 1000, maxMs: 4000 },
     createBot: () => {
       const b = new FakeBot();
       bots.push(b);
-      return b;
+      const actuator = new FakeActuator();
+      actuators.push(actuator);
+      return { bot: b, actuator };
     },
     ...extra,
   });
-  return { agent, bots, logs };
+  return { agent, bots, actuators, logs };
 }
 
 beforeEach(() => vi.useFakeTimers());
@@ -107,7 +113,7 @@ describe('BotAgent connection', () => {
       createBot: () => {
         calls++;
         if (calls === 1) throw new Error('bad options');
-        return new FakeBot();
+        return { bot: new FakeBot(), actuator: new FakeActuator() };
       },
     });
     agent.start();
@@ -205,5 +211,99 @@ describe('BotAgent snapshots', () => {
     agent.stop();
     vi.advanceTimersByTime(5000);
     expect(onSnapshot).not.toHaveBeenCalled();
+  });
+});
+
+const zombieAt = (id: number, z: number) => ({
+  id,
+  type: 'hostile',
+  name: 'zombie',
+  position: { x: 0, y: 64, z },
+  velocity: { x: 0, y: 0, z: 0 },
+});
+
+describe('BotAgent reflex', () => {
+  it('starts idle and engages a hostile on the next game tick', () => {
+    const { agent, bots, actuators, logs } = setup();
+    agent.start();
+    bots[0]!.emit('spawn');
+    expect(agent.intent.tactic).toBe('idle');
+
+    bots[0]!.entities['5'] = zombieAt(5, -6);
+    bots[0]!.emit('physicsTick');
+    expect(agent.intent).toMatchObject({ tactic: 'engage', targetId: 5 });
+    expect(actuators[0]!.calls).toEqual(['engage 5']);
+    expect(logs).toContain('info [JevBot] intent idle -> engage: fighting zombie');
+  });
+
+  it('runs at the configured tick rate', () => {
+    const cfg = { ...botConfig, reflex: { ...botConfig.reflex, everyTicks: 5 } };
+    const { agent, bots, actuators } = setup({}, cfg);
+    agent.start();
+    bots[0]!.emit('spawn');
+    bots[0]!.entities['5'] = zombieAt(5, -6);
+    for (let i = 0; i < 4; i++) bots[0]!.emit('physicsTick');
+    expect(actuators[0]!.calls).toEqual([]);
+    bots[0]!.emit('physicsTick');
+    expect(actuators[0]!.calls).toEqual(['engage 5']);
+  });
+
+  it('retreats when HP is low', () => {
+    const { agent, bots, actuators } = setup();
+    agent.start();
+    bots[0]!.emit('spawn');
+    bots[0]!.entities['5'] = zombieAt(5, -6);
+    bots[0]!.health = 4;
+    bots[0]!.emit('physicsTick');
+    expect(agent.intent.tactic).toBe('retreat');
+    expect(actuators[0]!.calls).toEqual(['retreat 5']);
+  });
+
+  it('does nothing when the reflex layer is disabled', () => {
+    const cfg = { ...botConfig, reflex: { ...botConfig.reflex, enabled: false } };
+    const { agent, bots, actuators } = setup({}, cfg);
+    agent.start();
+    bots[0]!.emit('spawn');
+    bots[0]!.entities['5'] = zombieAt(5, -6);
+    bots[0]!.emit('physicsTick');
+    expect(actuators[0]!.calls).toEqual([]);
+    expect(agent.intent.tactic).toBe('idle');
+  });
+
+  it('stops acting on death and resets its intent', () => {
+    const { agent, bots, actuators } = setup();
+    agent.start();
+    bots[0]!.emit('spawn');
+    bots[0]!.entities['5'] = zombieAt(5, -6);
+    bots[0]!.emit('physicsTick');
+    bots[0]!.emit('death');
+    expect(actuators[0]!.calls).toEqual(['engage 5', 'stop']);
+    expect(agent.intent.tactic).toBe('idle');
+  });
+
+  it('stops acting on disconnect and starts fresh on the new connection', () => {
+    const { agent, bots, actuators } = setup();
+    agent.start();
+    bots[0]!.emit('spawn');
+    bots[0]!.entities['5'] = zombieAt(5, -6);
+    bots[0]!.emit('physicsTick');
+    bots[0]!.emit('end');
+    expect(actuators[0]!.calls).toEqual(['engage 5', 'stop']);
+    expect(agent.intent.tactic).toBe('idle');
+
+    vi.advanceTimersByTime(1000);
+    bots[1]!.emit('spawn');
+    bots[1]!.emit('physicsTick');
+    expect(actuators[1]!.calls).toEqual([]);
+  });
+
+  it('stops the actuator when the agent stops', () => {
+    const { agent, bots, actuators } = setup();
+    agent.start();
+    bots[0]!.emit('spawn');
+    bots[0]!.entities['5'] = zombieAt(5, -6);
+    bots[0]!.emit('physicsTick');
+    agent.stop();
+    expect(actuators[0]!.calls).toEqual(['engage 5', 'stop']);
   });
 });

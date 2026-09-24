@@ -22,3 +22,13 @@ export class FakeBot extends EventEmitter implements BotLike {
     this.entities['0'] = this.entity as unknown as EntityLike;
   }
 }
+
+/** Records what the reflex layer asked it to do. */
+export class FakeActuator {
+  calls: string[] = [];
+  ticks: number[] = [];
+  engage = vi.fn((id: number) => void this.calls.push(`engage ${id}`));
+  retreatFrom = vi.fn((id: number) => void this.calls.push(`retreat ${id}`));
+  stop = vi.fn(() => void this.calls.push('stop'));
+  tick = vi.fn((n: number) => void this.ticks.push(n));
+}

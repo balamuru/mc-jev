@@ -86,8 +86,14 @@ npx vitest run -t "applies per-bot overrides" # one test by name
 npm run test:watch                # watch mode
 npm run lint && npm run typecheck
 npm run check                     # lint + typecheck + unit tests (what CI runs, minus format)
-npm run test:integration          # needs the local server running (see step 3)
+npm run test:integration          # starts its own throwaway servers (needs step 3 run once)
 ```
+
+### Integration tests
+
+`npm run test:integration` starts its own Paper server for each test file, on ports 25598 and 25599. Each gets a fresh flat world at night with no natural mob spawns, and it is deleted afterwards. Your dev world in `server/world` is never touched. The tests reuse the download and EULA acceptance in `server/`, so run `./scripts/server.sh` once first and stop it.
+
+Together the tests cover spawning, seeing another player, reconnecting after a kick, wearing armor, killing a summoned zombie with the best sword, retreating at low HP, and eating when hungry. They take about 35 seconds.
 
 ## Configuration reference (`config/default.json`)
 
@@ -113,20 +119,25 @@ npm run test:integration          # needs the local server running (see step 3)
 
 ### Per-bot defaults
 
-| Setting                                             | Meaning                                                                              | Default                      |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------- |
-| `defaults.perception.radiusBlocks`                  | Ignore entities farther away than this                                               | 24                           |
-| `defaults.perception.maxEntities`                   | Keep at most this many entities (nearest first)                                      | 8                            |
-| `defaults.perception.fovDegrees`                    | Horizontal field of view. Entities outside it are dropped. 360 turns the filter off. | 360                          |
-| `defaults.perception.requireLineOfSight`            | Drop entities behind walls, so the bot can't see through them                        | false                        |
-| `defaults.reflex.everyTicks`                        | Run the reflex layer every N game ticks (one tick is 50ms)                           | 1                            |
-| `defaults.strategic.intervalMs`                     | Time between periodic strategic decisions                                            | 2000                         |
-| `defaults.strategic.eventTriggers`                  | Events that trigger an immediate decision                                            | `hurt`, `newThreat`, `lowHp` |
-| `defaults.strategic.minGapMs`                       | Minimum time between any two decisions                                               | 250                          |
-| `defaults.jev.model`                                | Jev model                                                                            | `jev-latest`                 |
-| `defaults.jev.timeoutMs`, `defaults.jev.maxRetries` | Timeout per call, and how many retries                                               | 800, 0                       |
-| `defaults.jev.thresholds.act`                       | Confidence needed to act on a decision                                               | 0.7                          |
-| `defaults.jev.thresholds.cautious`                  | Confidence needed to act cautiously. Below this, rules decide.                       | 0.5                          |
+| Setting                                             | Meaning                                                                                  | Default                      |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------- |
+| `defaults.perception.radiusBlocks`                  | Ignore entities farther away than this                                                   | 24                           |
+| `defaults.perception.maxEntities`                   | Keep at most this many entities (nearest first)                                          | 8                            |
+| `defaults.perception.fovDegrees`                    | Horizontal field of view. Entities outside it are dropped. 360 turns the filter off.     | 360                          |
+| `defaults.perception.requireLineOfSight`            | Drop entities behind walls, so the bot can't see through them                            | false                        |
+| `defaults.reflex.enabled`                           | Turn the reflex layer off to make a bot observe-only                                     | true                         |
+| `defaults.reflex.everyTicks`                        | Run the reflex layer every N game ticks (one tick is 50ms)                               | 1                            |
+| `defaults.rules.retreatHp`                          | At or below this HP (of 20) the bot retreats from hostiles                               | 6                            |
+| `defaults.rules.resumeHp`                           | After retreating, resume fighting once HP is back to this. Must be at least `retreatHp`. | 14                           |
+| `defaults.rules.engageRadiusBlocks`                 | Engage hostiles within this many blocks                                                  | 16                           |
+| `defaults.rules.eatBelowFood`                       | Start eating when food falls below this level (of 20)                                    | 15                           |
+| `defaults.strategic.intervalMs`                     | Time between periodic strategic decisions                                                | 2000                         |
+| `defaults.strategic.eventTriggers`                  | Events that trigger an immediate decision                                                | `hurt`, `newThreat`, `lowHp` |
+| `defaults.strategic.minGapMs`                       | Minimum time between any two decisions                                                   | 250                          |
+| `defaults.jev.model`                                | Jev model                                                                                | `jev-latest`                 |
+| `defaults.jev.timeoutMs`, `defaults.jev.maxRetries` | Timeout per call, and how many retries                                                   | 800, 0                       |
+| `defaults.jev.thresholds.act`                       | Confidence needed to act on a decision                                                   | 0.7                          |
+| `defaults.jev.thresholds.cautious`                  | Confidence needed to act cautiously. Below this, rules decide.                           | 0.5                          |
 
 ### Bots
 

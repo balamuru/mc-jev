@@ -101,3 +101,32 @@ describe('perception and debug settings', () => {
     expect(() => parseConfig(raw)).toThrow(/Invalid config/);
   });
 });
+
+describe('reflex and rules settings', () => {
+  it('has defaults', () => {
+    const [bot] = parseConfig(base()).bots;
+    expect(bot?.reflex).toEqual({ enabled: true, everyTicks: 1 });
+    expect(bot?.rules).toEqual({
+      retreatHp: 6,
+      resumeHp: 14,
+      engageRadiusBlocks: 16,
+      eatBelowFood: 15,
+    });
+  });
+
+  it('lets a bot override rules individually', () => {
+    const raw = base();
+    raw.bots = [
+      { username: 'Brave', overrides: { rules: { retreatHp: 2 }, reflex: { enabled: false } } },
+    ];
+    const [bot] = parseConfig(raw).bots;
+    expect(bot?.rules).toMatchObject({ retreatHp: 2, resumeHp: 14 });
+    expect(bot?.reflex.enabled).toBe(false);
+  });
+
+  it('rejects a retreat HP above the resume HP', () => {
+    const raw = base();
+    raw.bots = [{ username: 'Odd', overrides: { rules: { retreatHp: 15 } } }];
+    expect(() => parseConfig(raw)).toThrow(/retreatHp must be <= resumeHp/);
+  });
+});

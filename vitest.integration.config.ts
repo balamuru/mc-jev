@@ -5,6 +5,8 @@ export default defineConfig({
   test: {
     include: ['test/integration/**/*.test.ts'],
     testTimeout: 120_000,
+    // Each file starts its own server; run them one at a time.
+    fileParallelism: false,
     passWithNoTests: true,
   },
 });

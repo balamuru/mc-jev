@@ -5,8 +5,25 @@ import { z } from 'zod';
 export const GAME_TICK_MS = 50;
 
 const reflexSchema = z.object({
+  /** Turn the reflex layer off to make a bot observe-only. */
+  enabled: z.boolean(),
   /** Run the reflex layer every N game ticks (1 = every 50ms). */
   everyTicks: z.number().int().min(1).max(20),
+});
+
+/** Deterministic combat and survival rules. They are also the fallback when Jev is unavailable. */
+const rulesBaseSchema = z.object({
+  /** At or below this many HP (of 20) the bot retreats from hostiles instead of fighting. */
+  retreatHp: z.number().min(0).max(20),
+  /** After retreating, the bot resumes fighting only once it has regained this many HP. */
+  resumeHp: z.number().min(0).max(20),
+  /** Hostiles within this many blocks are engaged. */
+  engageRadiusBlocks: z.number().min(1).max(64),
+  /** Start eating when food falls below this level (of 20). */
+  eatBelowFood: z.number().min(0).max(20),
+});
+const rulesSchema = rulesBaseSchema.refine((r) => r.retreatHp <= r.resumeHp, {
+  message: 'retreatHp must be <= resumeHp',
 });
 
 const strategicSchema = z.object({
@@ -48,6 +65,7 @@ const perceptionSchema = z.object({
 const agentSettingsSchema = z.object({
   perception: perceptionSchema,
   reflex: reflexSchema,
+  rules: rulesSchema,
   strategic: strategicSchema,
   jev: jevSchema,
 });
@@ -80,6 +98,7 @@ const botEntrySchema = z.object({
     .object({
       perception: perceptionSchema.partial(),
       reflex: reflexSchema.partial(),
+      rules: rulesBaseSchema.partial(),
       strategic: strategicSchema.partial(),
       jev: jevSchema
         .omit({ thresholds: true })
@@ -138,6 +157,7 @@ export function parseConfig(raw: unknown, env: NodeJS.ProcessEnv = {}): Config {
     const settings = agentSettingsSchema.parse({
       perception: { ...file.defaults.perception, ...o.perception },
       reflex: { ...file.defaults.reflex, ...o.reflex },
+      rules: { ...file.defaults.rules, ...o.rules },
       strategic: { ...file.defaults.strategic, ...o.strategic },
       jev: {
         ...file.defaults.jev,

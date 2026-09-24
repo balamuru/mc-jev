@@ -33,9 +33,24 @@ Many parts described here are planned for later phases. [phases.md](phases.md) s
 
 The reflex layer runs on `physicsTick`, once every `reflex.everyTicks` game ticks. Minecraft's game clock is fixed at 20 Hz, so one game tick is 50ms.
 
-- **What it does:** aims, times attacks, strafes, shields, eats and follows paths. It uses the Mineflayer plugins pvp, pathfinder, auto-eat and armor-manager.
+- **What it does:**
+  - **Chases** its target with pathfinder and **aims** at it when close.
+  - **Attacks** only when the target is within reach and the weapon's cooldown has passed (for example 13 ticks for a sword).
+  - **Equips** the best sword or axe in the inventory.
+  - **Retreats** from a threat by pathfinding away from it.
+  - **Eats** through auto-eat and **wears armor** through armor-manager.
+- **Combat is our own code:** `mineflayer-pvp` is not used, because it is unmaintained and depends on a deprecated Mineflayer event.
 - **What it may not do:** it never waits on network I/O.
 - **Where its instructions come from:** it follows the current **Intent**, for example `{ tactic: 'kite', targetId: 42 }`. Jev sets the Intent; when Jev is unavailable, the rules set it.
+
+### Rules (the fallback policy)
+
+`decideByRules` picks an Intent from the snapshot alone. The strategic layer overrides it when Jev is available and confident; otherwise the rules decide.
+
+- **No visible hostile within `rules.engageRadiusBlocks`:** idle.
+- **HP at or below `rules.retreatHp`:** retreat from the nearest hostile. The bot keeps retreating until HP is back to `rules.resumeHp`, so it doesn't flip between fighting and fleeing at the threshold.
+- **Otherwise:** engage the nearest hostile. The bot stays on its current target unless another is at least 3 blocks closer.
+- **Passive animals, villagers and players are never attacked.**
 
 ### Strategic layer
 

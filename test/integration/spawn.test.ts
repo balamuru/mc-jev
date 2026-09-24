@@ -1,65 +1,40 @@
-import { readFileSync } from 'node:fs';
-import { connect } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { BotAgent, type Logger } from '../../src/agent/BotAgent.js';
-import { parseConfig } from '../../src/config.js';
+import { botName, makeAgent, waitFor } from './helpers.js';
+import { type TestServer, startTestServer } from './serverHarness.js';
 
-// Needs a running local server: ./scripts/server.sh  (see docs/setup.md)
-const config = parseConfig(JSON.parse(readFileSync('config/default.json', 'utf8')), process.env);
-const quiet: Logger = { info() {}, warn() {}, error: (m) => console.error(m) };
-
-function serverReachable(host: string, port: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const socket = connect({ host, port, timeout: 2000 });
-    socket.once('connect', () => (socket.destroy(), resolve(true)));
-    socket.once('error', () => resolve(false));
-    socket.once('timeout', () => (socket.destroy(), resolve(false)));
-  });
-}
-
-async function waitFor<T>(fn: () => T | null | undefined | false, timeoutMs: number, what: string) {
-  const start = Date.now();
-  for (;;) {
-    const value = fn();
-    if (value) return value;
-    if (Date.now() - start > timeoutMs) throw new Error(`Timed out waiting for ${what}`);
-    await new Promise((r) => setTimeout(r, 200));
-  }
-}
-
-const suffix = Math.random().toString(36).slice(2, 6);
-const template = config.bots[0]!;
-const agents = ['A', 'B'].map(
-  (n) =>
-    new BotAgent({ ...template, username: `It${n}_${suffix}` }, config.server, {
-      logger: quiet,
-    }),
-);
+let server: TestServer;
+const a = () => agents[0]!.agent;
+const agents: ReturnType<typeof makeAgent>[] = [];
 
 beforeAll(async () => {
-  if (!(await serverReachable(config.server.host, config.server.port))) {
-    throw new Error(
-      `No Minecraft server at ${config.server.host}:${config.server.port}. Start it with ./scripts/server.sh`,
-    );
-  }
-});
+  server = await startTestServer(25599);
+  const suffix = botName('');
+  agents.push(makeAgent(server, `ItA${suffix}`), makeAgent(server, `ItB${suffix}`));
+}, 180_000);
 
-afterAll(() => agents.forEach((a) => a.stop()));
+afterAll(async () => {
+  agents.forEach((x) => x.agent.stop());
+  await server?.stop();
+});
 
 describe('bots on a real server', () => {
   it('spawns and reads a snapshot', async () => {
-    agents.forEach((a) => a.start());
-    await waitFor(() => agents.every((a) => a.state === 'online'), 60_000, 'both bots to spawn');
-    const snap = agents[0]!.snapshot();
+    agents.forEach((x) => x.agent.start());
+    await waitFor(
+      () => agents.every((x) => x.agent.state === 'online'),
+      60_000,
+      'both bots to spawn',
+    );
+    const snap = a().snapshot();
     expect(snap?.self.hp).toBeGreaterThan(0);
     expect(snap?.self.food).toBeGreaterThan(0);
   });
 
   it('sees the other bot as a player entity', async () => {
-    const other = agents[1]!.config.username;
+    const other = agents[1]!.agent.config.username;
     const snap = await waitFor(
       () => {
-        const s = agents[0]!.snapshot();
+        const s = a().snapshot();
         return s?.entities.some((e) => e.kind === other) ? s : null;
       },
       20_000,
@@ -67,6 +42,12 @@ describe('bots on a real server', () => {
     );
     const seen = snap.entities.find((e) => e.kind === other);
     expect(seen).toMatchObject({ category: 'player', visible: true });
-    expect(seen?.dist).toBeGreaterThanOrEqual(0);
+  });
+
+  it('reconnects after the server drops the connection', async () => {
+    const name = agents[1]!.agent.config.username;
+    await server.run(`kick ${name} test kick`);
+    await waitFor(() => agents[1]!.agent.state !== 'online', 10_000, 'the bot to notice the kick');
+    await waitFor(() => agents[1]!.agent.state === 'online', 30_000, 'the bot to reconnect');
   });
 });

@@ -19,7 +19,14 @@
       "requireLineOfSight": false
     },
     "reflex": {
+      "enabled": true,
       "everyTicks": 1
+    },
+    "rules": {
+      "retreatHp": 6,
+      "resumeHp": 14,
+      "engageRadiusBlocks": 16,
+      "eatBelowFood": 15
     },
     "strategic": {
       "intervalMs": 2000,

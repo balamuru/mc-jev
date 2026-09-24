@@ -30,7 +30,7 @@ Entities outside line of sight or field of view can be filtered out. This is a s
 
 ### FR-3 Reflex layer
 
-It covers aiming, attack timing (respecting the attack cooldown), strafing, shielding, eating, equipping armor and pathing. It uses no network calls.
+It covers chasing, aiming, attack timing (respecting the weapon's cooldown), choosing the best weapon, retreating, eating, and wearing armor. It uses no network calls. Strafing and shielding are not implemented yet.
 
 ### FR-4 Strategic layer
 
