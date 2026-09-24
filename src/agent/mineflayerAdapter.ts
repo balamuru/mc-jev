@@ -40,6 +40,7 @@ export interface BotLike extends EventEmitter {
 }
 
 const ARMOR_SLOTS = [5, 6, 7, 8];
+const OFFHAND_SLOT = 45;
 
 /** Read the bot's current perception snapshot. */
 export function readSnapshot(
@@ -62,6 +63,7 @@ export function readSnapshot(
         inWater: self.isInWater ?? false,
         heldItem: bot.heldItem,
         armor: ARMOR_SLOTS.flatMap((slot) => bot.inventory.slots[slot]?.name ?? []),
+        offhand: bot.inventory.slots[OFFHAND_SLOT] ?? null,
         inventory: bot.inventory.items(),
       },
       // Exclude the bot itself; the snapshot already describes it.

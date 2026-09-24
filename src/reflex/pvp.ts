@@ -17,6 +17,11 @@ export interface PvpInput {
   ticksSinceJump: number;
   /** Ticks the swing has been ready and waiting for a critical-hit chance. */
   ticksWaitingForCrit: number;
+  /**
+   * Only ever hit as a critical, never "anyway" after waiting: set when a ground swing would sweep
+   * into someone who must not be hurt.
+   */
+  mustCrit?: boolean;
 }
 
 export interface PvpAction {
@@ -46,7 +51,8 @@ export function pvpAction(input: PvpInput): PvpAction {
     return { jump: true, attack: false, sprint: false }; // go up, then hit on the way down
   }
   // Rising, or a jump just started: hold off, unless the wait has gone on too long.
-  return { jump: false, attack: input.ticksWaitingForCrit >= MAX_CRIT_WAIT_TICKS, sprint: false };
+  const giveUpWaiting = !input.mustCrit && input.ticksWaitingForCrit >= MAX_CRIT_WAIT_TICKS;
+  return { jump: false, attack: giveUpWaiting, sprint: false };
 }
 
 export type StrafeDirection = 'left' | 'right';

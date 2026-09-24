@@ -57,10 +57,12 @@ export function makeAgent(
 
 /**
  * Prepare a flat night-time world with no natural mob spawns and no natural healing, so fights
- * are deterministic and a wounded bot stays wounded.
+ * are deterministic and a wounded bot stays wounded. Mob griefing is off so creeper explosions
+ * don't leave craters that pile up over many trials and trap the bot or the mob in a pit.
  */
 export async function calmNight(server: TestServer): Promise<void> {
   await server.run('gamerule advance_time false');
   await server.run('time set night');
   await server.run('gamerule natural_health_regeneration false');
+  await server.run('gamerule mob_griefing false');
 }

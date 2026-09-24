@@ -33,6 +33,8 @@ export interface SelfLike {
   heldItem: ItemLike | null;
   /** Names of worn armor pieces. */
   armor: string[];
+  /** The item in the off-hand, e.g. a shield. */
+  offhand?: ItemLike | null;
   inventory: ItemLike[];
 }
 
@@ -96,6 +98,8 @@ export interface Snapshot {
     food: number;
     heldItem: string | null;
     armor: string[];
+    /** The off-hand item, e.g. `shield`, or null. */
+    offhand?: string | null;
     onGround: boolean;
     inWater: boolean;
   };

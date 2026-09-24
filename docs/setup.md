@@ -115,7 +115,7 @@ npm run benchmark:survival -- --trials 8 --label mychange
 npm run benchmark:survival -- --scenarios zombie-lowhp,creeper --trials 20
 ```
 
-Options: `--trials N` (default 8), `--scenarios a,b,c` (default all), `--label NAME`, `--timeout SECONDS` per trial (default 30), `--port N` (default 25597). Natural regeneration is switched off so that starting HP is a controlled variable. Results are printed as a table and saved to `logs/survival-<label>-<time>.json`. A full run takes about 15 minutes. See [survival-benchmark.md](survival-benchmark.md) for results and how to read them.
+Options: `--trials N` (default 8), `--scenarios a,b,c` (default all), `--label NAME`, `--trace` (print what the bot sees and intends every second), `--timeout SECONDS` per trial (default 30), `--port N` (default 25597). Natural regeneration is switched off so that starting HP is a controlled variable. Results are printed as a table and saved to `logs/survival-<label>-<time>.json`. A full run takes about 15 minutes. See [survival-benchmark.md](survival-benchmark.md) for results and how to read them.
 
 ### Tuning tools
 
@@ -174,32 +174,34 @@ tail -f logs/decisions-*.jsonl | jq -c '{agent, trigger, outcome, why, intent: .
 
 ### Per-bot defaults
 
-| Setting                                             | Meaning                                                                                                              | Default                      |
-| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
-| `defaults.perception.radiusBlocks`                  | Ignore entities farther away than this                                                                               | 24                           |
-| `defaults.perception.maxEntities`                   | Keep at most this many entities (nearest first)                                                                      | 8                            |
-| `defaults.perception.fovDegrees`                    | Horizontal field of view. Entities outside it are dropped. 360 turns the filter off.                                 | 360                          |
-| `defaults.perception.requireLineOfSight`            | Drop entities behind walls, so the bot can't see through them                                                        | false                        |
-| `defaults.reflex.enabled`                           | Turn the reflex layer off to make a bot observe-only                                                                 | true                         |
-| `defaults.reflex.everyTicks`                        | Run the reflex layer every N game ticks (one tick is 50ms)                                                           | 1                            |
-| `defaults.rules.pvp`                                | Fight back against players who attack the bot (or that Jev is very sure are about to). `false`: never fight players. | true                         |
-| `defaults.rules.retreatHp`                          | At or below this HP (of 20) the bot retreats from hostiles                                                           | 6                            |
-| `defaults.rules.resumeHp`                           | After retreating, resume fighting once HP is back to this. Must be at least `retreatHp`.                             | 14                           |
-| `defaults.rules.engageRadiusBlocks`                 | Engage hostiles within this many blocks                                                                              | 16                           |
-| `defaults.rules.eatBelowFood`                       | Start eating when food falls below this level (of 20)                                                                | 15                           |
-| `defaults.rules.noEatRadiusBlocks`                  | Don't eat while a hostile is within this many blocks (eating slows you and cancels sprinting)                        | 10                           |
-| `defaults.rules.dangerMargin`                       | Fight only if the expected damage is below this fraction of current HP; otherwise retreat                            | 0.8                          |
-| `defaults.rules.retreatCheckMs`                     | A retreat is judged every this many milliseconds...                                                                  | 2000                         |
-| `defaults.rules.retreatMinGainBlocks`               | ...and has failed if the distance to the threat grew by less than this                                               | 1.5                          |
-| `defaults.rules.fightBackMs`                        | After a failed retreat, fight back for this long. 0 turns fight-back off.                                            | 4000                         |
-| `defaults.strategic.enabled`                        | Ask Jev for decisions. When false, or with no API key, the rules decide alone.                                       | true                         |
-| `defaults.strategic.intervalMs`                     | Time between periodic strategic decisions                                                                            | 2000                         |
-| `defaults.strategic.eventTriggers`                  | Events that trigger an immediate decision                                                                            | `hurt`, `newThreat`, `lowHp` |
-| `defaults.strategic.minGapMs`                       | Minimum time between any two decisions                                                                               | 250                          |
-| `defaults.jev.model`                                | Jev model                                                                                                            | `jev-latest`                 |
-| `defaults.jev.timeoutMs`, `defaults.jev.maxRetries` | Timeout per call, and how many retries                                                                               | 1000, 0                      |
-| `defaults.jev.thresholds.act`                       | Confidence needed to act on a decision                                                                               | 0.7                          |
-| `defaults.jev.thresholds.cautious`                  | Confidence needed to act cautiously. Below this, rules decide.                                                       | 0.5                          |
+| Setting                                             | Meaning                                                                                                                                                          | Default                      |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| `defaults.perception.radiusBlocks`                  | Ignore entities farther away than this                                                                                                                           | 24                           |
+| `defaults.perception.maxEntities`                   | Keep at most this many entities (nearest first)                                                                                                                  | 8                            |
+| `defaults.perception.fovDegrees`                    | Horizontal field of view. Entities outside it are dropped. 360 turns the filter off.                                                                             | 360                          |
+| `defaults.perception.requireLineOfSight`            | Drop entities behind walls, so the bot can't see through them                                                                                                    | false                        |
+| `defaults.reflex.enabled`                           | Turn the reflex layer off to make a bot observe-only                                                                                                             | true                         |
+| `defaults.reflex.everyTicks`                        | Run the reflex layer every N game ticks (one tick is 50ms)                                                                                                       | 1                            |
+| `defaults.rules.pvp`                                | Fight back against players who attack the bot (or that Jev is very sure are about to). `false`: never fight players.                                             | true                         |
+| `defaults.rules.shield`                             | Hold up a shield (if one is in the off-hand) between swings and against creepers and archers. Off: it helped against creepers but not against groups of zombies. | false                        |
+| `defaults.rules.strafeMobs`                         | Side-step melee mobs while the weapon recharges. Off: no measurable effect.                                                                                      | false                        |
+| `defaults.rules.retreatHp`                          | At or below this HP (of 20) the bot retreats from hostiles                                                                                                       | 6                            |
+| `defaults.rules.resumeHp`                           | After retreating, resume fighting once HP is back to this. Must be at least `retreatHp`.                                                                         | 14                           |
+| `defaults.rules.engageRadiusBlocks`                 | Engage hostiles within this many blocks                                                                                                                          | 16                           |
+| `defaults.rules.eatBelowFood`                       | Start eating when food falls below this level (of 20)                                                                                                            | 15                           |
+| `defaults.rules.noEatRadiusBlocks`                  | Don't eat while a hostile is within this many blocks (eating slows you and cancels sprinting)                                                                    | 10                           |
+| `defaults.rules.dangerMargin`                       | Fight only if the expected damage is below this fraction of current HP; otherwise retreat                                                                        | 0.8                          |
+| `defaults.rules.retreatCheckMs`                     | A retreat is judged every this many milliseconds...                                                                                                              | 2000                         |
+| `defaults.rules.retreatMinGainBlocks`               | ...and has failed if the distance to the threat grew by less than this                                                                                           | 1.5                          |
+| `defaults.rules.fightBackMs`                        | After a failed retreat, fight back for this long. 0 turns fight-back off.                                                                                        | 4000                         |
+| `defaults.strategic.enabled`                        | Ask Jev for decisions. When false, or with no API key, the rules decide alone.                                                                                   | true                         |
+| `defaults.strategic.intervalMs`                     | Time between periodic strategic decisions                                                                                                                        | 2000                         |
+| `defaults.strategic.eventTriggers`                  | Events that trigger an immediate decision                                                                                                                        | `hurt`, `newThreat`, `lowHp` |
+| `defaults.strategic.minGapMs`                       | Minimum time between any two decisions                                                                                                                           | 250                          |
+| `defaults.jev.model`                                | Jev model                                                                                                                                                        | `jev-latest`                 |
+| `defaults.jev.timeoutMs`, `defaults.jev.maxRetries` | Timeout per call, and how many retries                                                                                                                           | 1000, 0                      |
+| `defaults.jev.thresholds.act`                       | Confidence needed to act on a decision                                                                                                                           | 0.7                          |
+| `defaults.jev.thresholds.cautious`                  | Confidence needed to act cautiously. Below this, rules decide.                                                                                                   | 0.5                          |
 
 ### Bots
 

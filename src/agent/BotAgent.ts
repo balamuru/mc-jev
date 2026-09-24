@@ -70,7 +70,11 @@ export function createMineflayerBot(server: Config['server'], config: BotConfig)
   }
   return {
     bot: bot as unknown as BotLike,
-    actuator: new MineflayerActuator(bot, protectedFor(config)),
+    actuator: new MineflayerActuator(bot, {
+      protectedPlayers: protectedFor(config),
+      shield: config.rules.shield,
+      strafeMobs: config.rules.strafeMobs,
+    }),
   };
 }
 
@@ -82,6 +86,7 @@ export class BotAgent {
   private _state: AgentState = 'idle';
   private bot: BotLike | null = null;
   private reflex: ReflexLoop | null = null;
+  private actuator: Actuator | null = null;
   private strategic: StrategicLayer | null = null;
   private modes: ModeController | null = null;
   private member: SwarmMember | null = null;
@@ -144,6 +149,11 @@ export class BotAgent {
     return this.modes?.mode ?? { name: this.config.mode };
   }
 
+  /** True while the bot holds up a shield. */
+  get blocking(): boolean {
+    return this.actuator?.blocking ?? false;
+  }
+
   /** What the bot is currently trying to do. */
   get intent(): Intent {
     return this.reflex?.intent ?? IDLE;
@@ -175,6 +185,7 @@ export class BotAgent {
       return;
     }
     this.bot = bot;
+    this.actuator = actuator;
     bot.on('death', () => {
       this._deaths++;
     });

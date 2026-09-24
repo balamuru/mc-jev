@@ -39,6 +39,36 @@ Survival is the fraction of 8 trials in which the bot was alive at the end. The 
 2. **Retreating, as implemented, does more harm than good.** In the two low-HP scenarios where the bot really is in danger, fighting on survived far more often than fleeing did: 100% against 12% (one skeleton) and 75–88% against 25% (three zombies). Our retreat is a bare "run away from the nearest threat", with no safe place to run to. A skeleton shoots the bot in the back, and zombies chase it and come at it from several sides. So `rules.retreat` now defaults to **off**. The retreat logic, the danger estimate and the failed-retreat detection are still there, tested, and can be switched on per bot.
 3. **Nothing got worse** in the scenarios the bot already handled (100% both before and after), within the noise of 8 trials.
 
+## Phase 8: shield and strafing against mobs
+
+Two behaviors were added in Phase 8 and each was measured before choosing its default. The rule (agreed beforehand): a behavior ships on only if survival is not lower and mean damage taken is lower.
+
+**Shield** (`rules.shield`): raised between swings and against creepers and archers, lowered for every ready swing and while chasing. Three scenarios were added, each with a shield in the off-hand. Damage counts a death as losing all the starting HP; the plus-or-minus figure is the standard error.
+
+| Scenario                                           | Trials  | Shield on: survived | Shield on: damage | Shield off: survived | Shield off: damage |
+| -------------------------------------------------- | ------- | ------------------- | ----------------- | -------------------- | ------------------ |
+| `skeleton-shield` (10 HP, iron gear)               | 20 each | 20/20               | 1.5 ± 0.3         | 20/20                | 1.7 ± 0.2          |
+| `zombie-x3-lowhp-shield` (6 HP, iron gear)         | 40 each | 34/40               | 3.7 ± 0.3         | 37/40                | 4.3 ± 0.2          |
+| `creeper-shield` (full HP, wooden sword, no armor) | 20 each | 20/20               | 8.0 ± 0.8         | 20/20                | 9.6 ± 0.2          |
+
+- It **helps against creepers**: about 17% less damage, around two standard errors.
+- It makes **no clear difference against a skeleton**.
+- **Against three zombies at low HP, survival was lower with the shield in both runs** (17/20 against 18/20 at first, then 34/40 against 37/40 in a 40-trial rerun). That isn't statistically decisive, but it points the same way twice, and the rule requires survival not to be lower. A likely reason: a raised shield takes a few ticks to become effective, only blocks from the front, and three zombies surround the bot, while blocking delays its own movement.
+- **So `rules.shield` defaults to off.** A shield used only against creepers, where it clearly helps, is on the backlog.
+
+**Strafing against mobs** (`rules.strafeMobs`): side-stepping a melee mob within 3 blocks while the weapon recharges. 20 trials each way.
+
+| Scenario          | Strafe on: survived | Strafe on: damage | Strafe off: survived | Strafe off: damage |
+| ----------------- | ------------------- | ----------------- | -------------------- | ------------------ |
+| `zombie-x3-lowhp` | 19/20               | 3.7 ± 0.3         | 18/20                | 3.8 ± 0.3          |
+| `zombie-x2-weak`  | 19/20               | 3.5 ± 1.0         | 20/20                | 4.8 ± 1.0          |
+| `baby-zombie`     | 20/20               | 0.0 ± 0.0         | 20/20                | 0.1 ± 0.1          |
+| `spider`          | 20/20               | 0.2 ± 0.1         | 20/20                | 0.2 ± 0.1          |
+
+Every difference is within noise, and one scenario lost a survival, so **`rules.strafeMobs` defaults to off.**
+
+**A flaw in the benchmark, found and fixed.** Creeper explosions left craters in the flat test world. Over 20 trials they piled up until the bot or the creeper was stuck in a pit where neither could reach the other, and trials ran out the clock. It showed up as 11 to 13 timeouts in 20 creeper trials, with the shield on or off. The benchmark and the integration tests now turn off the `mob_griefing` gamerule, and the creeper numbers above come from the rerun. The earlier creeper results (8 trials, run last in each benchmark) had fewer explosions before them and show no timeouts, but they ran without this fix. `--trace` prints what the bot sees and intends every second, which is how this was found.
+
 ## Caveats
 
 - **Small samples.** With 8 trials, 75% against 88% is not a real difference, and neither are the end-HP differences in the creeper scenario (explosion damage is either large or nothing). Only the big gaps (25% against 88–100%) are trustworthy. Run `--trials 20` before drawing any finer conclusion.

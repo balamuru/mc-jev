@@ -6,6 +6,9 @@ import { isProtectedPlayer } from './protect.js';
 export interface RuleSettings {
   /** Fight back against players who attacked the bot. */
   pvp: boolean;
+  /** Shield use and strafing against mobs (carried out by the actuator). */
+  shield?: boolean;
+  strafeMobs?: boolean;
   /** Players never to attack: owner, allies, other bots. */
   protectedPlayers?: string[];
   retreat: boolean;

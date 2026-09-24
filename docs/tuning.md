@@ -65,6 +65,10 @@ Measured over about 1,500 real calls through OpenRouter:
 - **The coordinator did not help.** Its focus-fire directive made the squad damage 11.2 ± 2.0, no better than independent and worse than plain cooperation (8.6 ± 1.4), though the difference from cooperation is within noise. A plausible reason is that sending everyone at one target makes the bots bunch up and the others get hit while it dies, but this was not tested.
 - **So `swarm.mode` now defaults to `cooperative`.** `coordinated` stays available, but there is no evidence yet that it is worth its cost.
 
+### After the sweep-safety fix (Phase 8)
+
+Phase 8 made bots swing only as critical hits when another player is within 2 blocks of their target, so they can't hurt each other with sword sweeps. Squad bots often stand next to each other's targets, so this affects them. One rerun of `cooperative`, rules only, 8 trials: all waves cleared, no deaths, 10.2 seconds to clear (was 9.6) and squad damage 9.3 (was 7.9). The damage average includes one outlier trial of 25; the median was 8.3. So bots are a little slower, and no longer hurt each other.
+
 ## A bug the experiments found
 
 The first Jev squad run **crashed the whole process**: the SDK leaves a rejection nobody is listening to whenever a call is cancelled, or times out, while its response is still arriving, and Node treats that as fatal. It only shows up under load. It was reproduced against a slow local server, and `installAbortGuard` now swallows exactly those abort-type rejections. See [architecture.md](architecture.md#jev-integration).

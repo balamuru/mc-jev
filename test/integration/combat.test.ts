@@ -83,11 +83,13 @@ describe('reflex layer on a real server', () => {
 
   it('fights one zombie at low HP, but retreats from a group', async () => {
     dumpOnFailure();
-    // Wear the bot down to the retreat threshold.
-    for (let i = 0; i < 10 && (bot.agent.snapshot()?.self.hp ?? 20) > 5; i++) {
-      await server.run(`damage ${name} 4 minecraft:magic`, 250);
-    }
-    expect(bot.agent.snapshot()?.self.hp).toBeLessThanOrEqual(6);
+    // Set HP to exactly 6: heal fully, then take 14 magic damage (which armor does not reduce).
+    // Starting from whatever the earlier tests left made this flaky: at 1-2 HP the rules rightly
+    // retreat even from a single zombie.
+    await server.run(`effect give ${name} minecraft:instant_health 1 10 true`, 300);
+    await waitFor(() => (bot.agent.snapshot()?.self.hp ?? 0) >= 20, 5_000, 'full HP');
+    await server.run(`damage ${name} 14 minecraft:magic`, 300);
+    await waitFor(() => Math.round(bot.agent.snapshot()?.self.hp ?? 0) === 6, 5_000, 'HP 6');
 
     // One zombie against a geared bot is a fight it should take, even at 6 HP.
     await server.run(`execute at ${name} run summon zombie ~8 ~ ~`);

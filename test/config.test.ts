@@ -108,6 +108,8 @@ describe('reflex and rules settings', () => {
     expect(bot?.reflex).toEqual({ enabled: true, everyTicks: 1 });
     expect(bot?.rules).toEqual({
       pvp: true,
+      shield: false,
+      strafeMobs: false,
       retreat: false,
       retreatHp: 6,
       resumeHp: 14,

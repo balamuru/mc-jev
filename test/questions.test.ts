@@ -29,6 +29,7 @@ describe('buildState', () => {
       food: 20,
       weapon: 'iron_sword',
       armor_points: 15,
+      shield: false,
       in_water: false,
     });
   });
@@ -271,8 +272,8 @@ describe('squad in the state and questions', () => {
     expect(alone.target.instructions).not.toContain('squad');
   });
 
-  it('is version v3', () => {
-    expect(QUESTION_SET_VERSION).toBe('v3');
+  it('is version v4', () => {
+    expect(QUESTION_SET_VERSION).toBe('v4');
   });
 });
 

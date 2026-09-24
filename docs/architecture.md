@@ -38,7 +38,8 @@ The reflex layer runs on `physicsTick`, once every `reflex.everyTicks` game tick
   - **Attacks** only when the target is within reach and the weapon's cooldown has passed (for example 13 ticks for a sword).
   - **Equips** the best sword or axe in the inventory.
   - **Retreats** from a threat by pathfinding away from it.
-  - **Eats** through auto-eat and **wears armor** through armor-manager.
+  - **Eats** through auto-eat and **wears armor** through armor-manager, and puts a shield or totem in the off-hand.
+  - **Shield and strafing** (off by default, `rules.shield` and `rules.strafeMobs`): raises a shield between swings and against creepers and archers, never while a swing is ready (`src/reflex/shield.ts`), and side-steps melee mobs while the weapon recharges. Against players it always strafes and jumps for critical hits.
 - **Combat is our own code:** `mineflayer-pvp` is not used, because it is unmaintained and depends on a deprecated Mineflayer event.
 - **What it may not do:** it never waits on network I/O.
 - **Where its instructions come from:** it follows the current **Intent**, for example `{ tactic: 'kite', targetId: 42 }`. Jev sets the Intent; when Jev is unavailable, the rules set it.
@@ -117,6 +118,8 @@ Players are never threats just for being there. A player becomes a threat when:
 Both routes set a `provoked` flag on the player in the snapshot, and from there the normal rules apply: the player is a threat like a mob.
 
 **The owner, allies and other bots are never attacked.** `isProtectedPlayer` is checked in the rules (`threatsIn`), when building the targets Jev may choose from, and again in the actuator before it ever engages or swings, so even a mistake in one layer cannot lead to an attack. The owner is added to the protected set wherever it is used, so it does not depend on how the config was assembled. `rules.pvp: false` turns off all fighting against players.
+
+**No sweep damage to bystanders.** A full-strength sword swing made on the ground also hits everything within about a block of the target. So whenever another player (the owner, an ally, another bot or a stranger) stands within 2 blocks of the target and the bot holds a sword, it swings only mid-jump, as a critical hit, which never sweeps (`src/reflex/sweep.ts`). The integration tests found this: the owner lost health while standing next to something the bot was fighting.
 
 Against a player, the actuator (`src/agent/actuator.ts` with the timing in `src/reflex/pvp.ts`) jumps so the hit lands as a critical hit, stops sprinting while in reach (sprinting cancels critical hits), and strafes so the player has a harder time landing hits.
 

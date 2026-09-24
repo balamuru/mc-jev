@@ -38,6 +38,8 @@
     },
     "rules": {
       "pvp": true,
+      "shield": false,
+      "strafeMobs": false,
       "retreat": false,
       "retreatHp": 6,
       "resumeHp": 14,

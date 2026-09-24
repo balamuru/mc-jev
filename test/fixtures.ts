@@ -7,6 +7,8 @@ import type { RuleSettings } from '../src/reflex/rules.js';
  */
 export const rules: RuleSettings = {
   pvp: true,
+  shield: true,
+  strafeMobs: true,
   protectedPlayers: [],
   retreat: true,
   retreatHp: 6,

@@ -16,6 +16,14 @@ const rulesBaseSchema = z.object({
   /** Fight back against players who attack the bot (or that Jev judges to be a threat). Off: never fight players. */
   pvp: z.boolean(),
   /**
+   * Hold up a shield (if one is in the off-hand) between swings and against creepers and archers.
+   * Off by default: it cut creeper damage but slightly lowered survival against groups of zombies
+   * (docs/survival-benchmark.md, Phase 8).
+   */
+  shield: z.boolean(),
+  /** Side-step melee mobs while the weapon recharges. Off by default: no measurable effect. */
+  strafeMobs: z.boolean(),
+  /**
    * Allow retreating at all. Off by default: with no safe place to run to, the survival benchmark
    * shows a bot that fights on survives more often than one that flees (docs/survival-benchmark.md).
    */

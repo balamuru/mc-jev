@@ -111,6 +111,7 @@ export function buildSnapshot(
       food: self.food,
       heldItem: itemName(self.heldItem),
       armor: self.armor,
+      offhand: itemName(self.offhand),
       onGround: self.onGround,
       inWater: self.inWater,
     },

@@ -120,6 +120,16 @@ describe('player combat on a real server', () => {
     rival.once('death', () => {
       rivalDied = true;
     });
+    // Keep the bystander well away from the fight: the scripted rival swings from the ground, and
+    // its own sweeps would otherwise hit anyone standing beside the bot. (Our bot's sweep safety has
+    // its own test below.)
+    await server.run(`execute at ${agentName} run tp ${bystanderName} ~10 ~ ~`, 300);
+    const bystanderHits: string[] = [];
+    bystander.on('entityHurt', (victim, source) => {
+      if (victim === bystander.entity)
+        bystanderHits.push(source?.username ?? source?.name ?? 'unknown');
+    });
+    onTestFailed(() => console.log(`--- bystander was hit by: ${bystanderHits.join(', ')}`));
     const stop = attack(rival, agentName);
     try {
       await waitFor(
@@ -136,22 +146,66 @@ describe('player combat on a real server', () => {
     expect(bot.logs.some((l) => l.includes(`fighting ${bystanderName}`))).toBe(false);
   });
 
+  it('never hurts its owner with a sword sweep when the owner stands next to its target', async () => {
+    dump();
+    await waitFor(() => agent().intent.tactic === 'idle', 30_000, 'the bot to calm down');
+    // A zombie that cannot move or attack (NoAI), right beside the owner: the only way the owner
+    // can get hurt is the bot's own swing sweeping into them.
+    await server.run(`execute at ${agentName} run tp ${ownerName} ~4 ~ ~`, 300);
+    await server.run(`execute at ${ownerName} run summon zombie ~1 ~ ~ {NoAI:1b}`, 300);
+    const before = owner.health;
+    const hurt: number[] = [];
+    const onHealth = () => {
+      if (owner.health < before) hurt.push(owner.health);
+    };
+    owner.on('health', onHealth);
+    try {
+      await waitFor(
+        () => agent().intent.tactic === 'engage',
+        10_000,
+        'the bot to engage the zombie',
+      );
+      const zombieAlive = async () =>
+        /Test passed/.test(await server.run('execute if entity @e[type=zombie]', 200));
+      const start = Date.now();
+      while ((await zombieAlive()) && Date.now() - start < 45_000) await sleep(300);
+      expect(await zombieAlive()).toBe(false);
+    } finally {
+      owner.removeListener('health', onHealth);
+      await server.run('kill @e[type=zombie]', 150);
+    }
+    expect(hurt).toEqual([]);
+  });
+
   it('never fights back against its owner, even when the owner hits it', async () => {
     dump();
     await waitFor(() => agent().intent.tactic === 'idle', 30_000, 'the bot to calm down');
     const before = owner.health;
+    const botHpBefore = agent().snapshot()?.self.hp ?? 20;
+    // Record every change to the owner's health, and what the bot was doing at the time.
+    const ownerHurt: string[] = [];
+    const onHealth = () => {
+      if (owner.health < before) {
+        ownerHurt.push(
+          `owner hp ${owner.health}; bot intent ${agent().intent.tactic}: ${agent().intent.reason}`,
+        );
+      }
+    };
+    owner.on('health', onHealth);
+    onTestFailed(() => console.log(`--- owner health ---\n${ownerHurt.join('\n')}`));
     const stop = attack(owner, agentName, 800);
     try {
       await waitFor(
-        () => (agent().snapshot()?.self.hp ?? 20) < 20,
+        () => (agent().snapshot()?.self.hp ?? botHpBefore) < botHpBefore,
         30_000,
         'the owner to land a hit on the bot',
       );
       await sleep(4000);
     } finally {
       stop();
+      owner.removeListener('health', onHealth);
     }
-    expect(owner.health).toBe(before);
+    expect(ownerHurt).toEqual([]);
     expect(bot.logs.some((l) => l.includes(`fighting ${ownerName}`))).toBe(false);
     // It may still be dealing with the earlier rival, but never with its owner.
     expect(agent().intent.reason).not.toContain(ownerName);

@@ -2,17 +2,21 @@
 
 Each phase ends with `npm run check` passing, the phase's integration scenario working where there is one, the docs updated, and a commit you have approved.
 
-| Phase | Scope                                         | Requirements     | Status |
-| ----- | --------------------------------------------- | ---------------- | ------ |
-| 0     | Repo and scaffolding                          | FR-9             | Done   |
-| 1     | Server, connection and perception             | FR-1, FR-2       | Done   |
-| 2     | Reflex layer: rules-only fighter against mobs | FR-3             | Done   |
-| 2.5   | Survival hardening                            | FR-12            | Done   |
-| 3     | Jev strategic layer against mobs              | FR-4, FR-5, FR-8 | Done   |
-| 4     | Modes and chat commands                       | FR-6             | Done   |
-| 5     | Player combat                                 | FR-7             | Done   |
-| 6     | Multiple bots and swarm                       | FR-10, FR-11     | Done   |
-| 7     | Tuning (optional)                             | none             | Done   |
+| Phase | Scope                                         | Requirements     | Status  |
+| ----- | --------------------------------------------- | ---------------- | ------- |
+| 0     | Repo and scaffolding                          | FR-9             | Done    |
+| 1     | Server, connection and perception             | FR-1, FR-2       | Done    |
+| 2     | Reflex layer: rules-only fighter against mobs | FR-3             | Done    |
+| 2.5   | Survival hardening                            | FR-12            | Done    |
+| 3     | Jev strategic layer against mobs              | FR-4, FR-5, FR-8 | Done    |
+| 4     | Modes and chat commands                       | FR-6             | Done    |
+| 5     | Player combat                                 | FR-7             | Done    |
+| 6     | Multiple bots and swarm                       | FR-10, FR-11     | Done    |
+| 7     | Tuning (optional)                             | none             | Done    |
+| 8     | Shield and strafing against mobs              | FR-3             | Done    |
+| 9     | Bow combat                                    | FR-3             | Next    |
+| 10    | Roles that change behavior                    | FR-11            | Planned |
+| 11    | Test coverage and housekeeping                | FR-2, FR-7       | Planned |
 
 ## Phase 0: Repo and scaffolding
 
@@ -104,12 +108,24 @@ Measurements, not intuition, decided the defaults. The full write-up is in [tuni
 - **Not helpful:** the coordinator's focus-fire directive did not beat plain cooperation.
 - **A bug found:** an SDK bug that crashed the whole process under load, now guarded.
 
+## Phase 8: Shield and strafing against mobs
+
+Phases 8 to 11 close the gaps a review of the implementation against the plan found (see [plan-gap-closure.md](plan-gap-closure.md)).
+
+- **`src/reflex/shield.ts`:** a pure `shouldBlock` decides when to hold up a shield. It raises it between swings, against a close creeper even while closing in, and against archers in range, and it lowers it for every ready swing, while chasing, and while an axe hit has it on cooldown (the `set_cooldown` packet).
+- **Actuator:** raises and lowers the shield (never swinging while blocking), side-steps melee mobs between swings, and equips a shield or totem to the off-hand as soon as one arrives. The snapshot now reports the off-hand item, and Jev's state includes `shield` (question set v4).
+- **Benchmark:** three shield scenarios, and a `--trace` option. Craters from creeper explosions were skewing results; test worlds now turn off `mob_griefing`.
+- **Sweep safety (found by the tests):** a sword swing on the ground also hurts anyone next to the target, and the integration tests caught the owner losing health that way. When another player stands within 2 blocks of the target, the bot now only swings as a critical hit, which never sweeps (`src/reflex/sweep.ts`). A new integration test puts the owner beside a zombie that cannot move and checks the owner takes no damage.
+- **Results:** the shield cut creeper damage by about 17% but lowered survival against three zombies at low HP in two runs. Strafing made no measurable difference. **Both ship off** under the agreed rule, with the numbers in [survival-benchmark.md](survival-benchmark.md#phase-8-shield-and-strafing-against-mobs).
+- **Tests:** unit tests for `shouldBlock`, the first unit tests for the actuator (with a fake Mineflayer bot), and an integration test on a real server in which the shield is equipped and raised and the bot still kills a zombie.
+
 ## Backlog (not scheduled)
 
 Ideas from the survival discussion, to revisit once the benchmark shows where the bot still dies:
 
 - **Escape destinations.** Pick an open spot away from all threats (and toward home, the spawn point or a bed) and pathfind to it, instead of "get 24 blocks away". This avoids dead ends.
 - **Enemy-specific tactics.** Sprinting works against zombies. Baby zombies and spiders are faster than a sprinting player, so fight or block. Skeletons need broken line of sight. Creepers need 7+ blocks of distance and no melee. The speeds are from memory and should be measured first.
+- **A creeper-only shield.** Phase 8 showed the shield helps against creepers (about 17% less damage) but not against groups of zombies. Raising it only for creepers may keep the gain without the loss. It would need its own benchmark run.
 - **Emergency tools.** Golden apples, healing potions, a totem of undying in the offhand, raising a shield, and blocking yourself in with blocks (this only stops melee mobs).
 - **Cheaper deaths.** The `keepInventory` gamerule for experiments, and remembering where the bot died.
 - **Jev judgments around survival.** For example "can I win this fight?" and "is it safe to stop and eat?". These arrive with Phase 3 and later. The flee reflex itself stays in code, because Jev is too slow for it.

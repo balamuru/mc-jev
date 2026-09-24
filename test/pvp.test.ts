@@ -56,6 +56,13 @@ describe('pvpAction', () => {
     expect(late).toEqual({ jump: false, attack: true, sprint: false });
   });
 
+  it('with mustCrit, keeps waiting for a critical instead of hitting from the ground', () => {
+    const waited = act({ ticksSinceJump: 1, ticksWaitingForCrit: 100, mustCrit: true });
+    expect(waited.attack).toBe(false);
+    expect(act({ onGround: false, velocityY: -0.3, mustCrit: true }).attack).toBe(true);
+    expect(act({ mustCrit: true }).jump).toBe(true);
+  });
+
   it('never hits from outside reach', () => {
     expect(act({ dist: 4, onGround: false, velocityY: -1 }).attack).toBe(false);
   });

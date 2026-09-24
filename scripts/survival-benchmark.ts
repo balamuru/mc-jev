@@ -5,6 +5,7 @@
  *
  * Options: --trials N (default 8), --scenarios a,b,c (default all), --label NAME,
  *          --timeout SECONDS per trial (default 30), --port N (default 25597),
+ *          --trace to print what the bot sees and intends every second of each trial,
  *          --jev to let the bot ask Jev (needs TYPESAFE_API_KEY; costs a few cents in total),
  *          --rules JSON to override rule settings (e.g. '{"retreatHp":0,"dangerMargin":1000}'
  *          makes the bot never retreat, for comparing policies).
@@ -14,11 +15,12 @@ import { config as loadEnv } from 'dotenv';
 import { JevGateway } from '../src/strategic/gateway.js';
 import { createJevClient } from '../src/strategic/jev.js';
 import { formatSummary, summarize } from '../src/telemetry/analyze.js';
+import { formatSnapshot } from '../src/perception/format.js';
 import { JsonlDecisionLog, type DecisionEntry } from '../src/telemetry/decisionLog.js';
 import { makeAgent, sleep, waitFor, type TestAgent } from '../test/integration/helpers.js';
 import { startTestServer, type TestServer } from '../test/integration/serverHarness.js';
 
-type Gear = 'iron' | 'wood' | 'none';
+type Gear = 'iron' | 'wood' | 'none' | 'iron-shield' | 'wood-shield';
 
 interface Scenario {
   id: string;
@@ -65,6 +67,27 @@ export const SCENARIOS: Scenario[] = [
     gear: 'iron',
   },
   {
+    id: 'skeleton-shield',
+    description: '1 skeleton, bot at 10 HP, iron gear and a shield',
+    mobs: [{ type: 'skeleton', count: 1 }],
+    startHp: 10,
+    gear: 'iron-shield',
+  },
+  {
+    id: 'zombie-x3-lowhp-shield',
+    description: '3 zombies, bot at 6 HP, iron gear and a shield',
+    mobs: [{ type: 'zombie', count: 3 }],
+    startHp: 6,
+    gear: 'iron-shield',
+  },
+  {
+    id: 'creeper-shield',
+    description: '1 creeper, full HP, wooden sword and a shield, no armor',
+    mobs: [{ type: 'creeper', count: 1 }],
+    startHp: 20,
+    gear: 'wood-shield',
+  },
+  {
     id: 'baby-zombie',
     description: '1 baby zombie, bot at 10 HP, iron gear',
     mobs: [{ type: 'zombie', count: 1, nbt: '{IsBaby:1b}' }],
@@ -98,6 +121,15 @@ const GEAR: Record<Gear, string[]> = {
   iron: ['iron_sword', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'],
   wood: ['wooden_sword'],
   none: [],
+  'iron-shield': [
+    'iron_sword',
+    'iron_helmet',
+    'iron_chestplate',
+    'iron_leggings',
+    'iron_boots',
+    'shield',
+  ],
+  'wood-shield': ['wooden_sword', 'shield'],
 };
 
 interface TrialResult {
@@ -119,6 +151,7 @@ function parseArgs(argv: string[]) {
     port: Number(get('port', '25597')),
     rules: JSON.parse(get('rules', '{}')) as Record<string, number | boolean>,
     jev: argv.includes('--jev'),
+    trace: argv.includes('--trace'),
   };
 }
 
@@ -129,10 +162,13 @@ async function resetBot(server: TestServer, bot: TestAgent, sc: Scenario, name: 
   await server.run(`clear ${name}`, 150);
   await server.run(`effect clear ${name}`, 100);
   await server.run(`tp ${name} 0 -60 0`, 200);
-  const armorCount = GEAR[sc.gear].filter((g) => !g.endsWith('_sword')).length;
+  const armorCount = GEAR[sc.gear].filter((g) => !g.endsWith('_sword') && g !== 'shield').length;
+  const wantsShield = GEAR[sc.gear].includes('shield');
   for (const item of GEAR[sc.gear]) await server.run(`give ${name} ${item}`, 100);
   await waitFor(
-    () => agent.snapshot()?.self.armor.length === armorCount,
+    () =>
+      agent.snapshot()?.self.armor.length === armorCount &&
+      (!wantsShield || agent.snapshot()?.self.offhand === 'shield'),
     8_000,
     'armor to be worn',
   );
@@ -159,6 +195,7 @@ async function runTrial(
   sc: Scenario,
   name: string,
   timeoutMs: number,
+  trace = false,
 ): Promise<TrialResult> {
   await resetBot(server, bot, sc, name);
   const { agent } = bot;
@@ -187,6 +224,12 @@ async function runTrial(
     }
     if (Date.now() - lastCheck > 1000) {
       lastCheck = Date.now();
+      if (trace) {
+        const snap = agent.snapshot();
+        console.log(
+          `    ${seconds.toFixed(0)}s ${agent.intent.tactic} (${agent.intent.reason}) | ${snap ? formatSnapshot(snap) : 'no snapshot'}`,
+        );
+      }
       if (!(await anyAlive(server, types))) {
         return { outcome: 'won', seconds, endHp: agent.snapshot()?.self.hp ?? 0 };
       }
@@ -249,6 +292,8 @@ async function main() {
     console.log(
       (await server.run('gamerule natural_health_regeneration false')).trim().split('\n').pop(),
     );
+    // No craters: explosions over many trials would otherwise trap the bot or the mob in a pit.
+    await server.run('gamerule mob_griefing false');
     bot.agent.start();
     await waitFor(() => bot.agent.state === 'online', 60_000, 'the bot to spawn');
 
@@ -256,7 +301,7 @@ async function main() {
       results[sc.id] = [];
       for (let t = 0; t < args.trials; t++) {
         try {
-          const r = await runTrial(server, bot, sc, name, args.timeoutMs);
+          const r = await runTrial(server, bot, sc, name, args.timeoutMs, args.trace);
           results[sc.id]!.push(r);
           console.log(`  ${sc.id} #${t + 1}: ${r.outcome} in ${fmt(r.seconds)}s, HP ${r.endHp}`);
         } catch (err) {

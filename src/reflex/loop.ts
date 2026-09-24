@@ -16,6 +16,8 @@ export interface Actuator {
   stop(): void;
   /** Hold off (or allow again) eating, which slows the bot and cancels its sprint. */
   setEatingPaused(paused: boolean): void;
+  /** True while a shield is raised (optional: only the real actuator has one). */
+  readonly blocking?: boolean;
   /** Per-step upkeep such as aiming and attack timing. `elapsedTicks` game ticks passed since the last call. */
   tick(elapsedTicks: number): void;
 }
