@@ -74,6 +74,8 @@ export function createMineflayerBot(server: Config['server'], config: BotConfig)
       protectedPlayers: protectedFor(config),
       shield: config.rules.shield,
       strafeMobs: config.rules.strafeMobs,
+      bow: config.rules.bow,
+      bowRange: { minBlocks: config.rules.bowMinBlocks, maxBlocks: config.rules.bowMaxBlocks },
     }),
   };
 }
@@ -152,6 +154,11 @@ export class BotAgent {
   /** True while the bot holds up a shield. */
   get blocking(): boolean {
     return this.actuator?.blocking ?? false;
+  }
+
+  /** Arrows shot and hits that followed, since the agent started (real actuator only). */
+  get bowStats(): { shots: number; hits: number } {
+    return this.actuator?.bowStats ?? { shots: 0, hits: 0 };
   }
 
   /** What the bot is currently trying to do. */

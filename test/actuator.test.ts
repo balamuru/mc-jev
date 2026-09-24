@@ -5,7 +5,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { MineflayerActuator, OFFHAND_SLOT } from '../src/agent/actuator.js';
 
 /** Just enough of a Mineflayer bot for the actuator. */
-function fakeBot(opts: { shield?: boolean; weapon?: string } = {}) {
+function fakeBot(
+  opts: { shield?: boolean; weapon?: string; items?: Array<{ name: string; count: number }> } = {},
+) {
   const client = new EventEmitter();
   const events: string[] = [];
   const self = {
@@ -17,18 +19,30 @@ function fakeBot(opts: { shield?: boolean; weapon?: string } = {}) {
   };
   const slots: Array<{ name: string } | null> = [];
   if (opts.shield) slots[OFFHAND_SLOT] = { name: 'shield' };
+  const emitter = new EventEmitter();
   const bot = {
+    on: emitter.on.bind(emitter),
+    emit: emitter.emit.bind(emitter),
     _client: client,
     entity: self,
     entities: { 0: self } as Record<number, unknown>,
     heldItem: { name: opts.weapon ?? 'iron_sword' },
-    inventory: { slots, items: () => [{ name: opts.weapon ?? 'iron_sword', count: 1 }] },
+    inventory: {
+      slots,
+      items: () => opts.items ?? [{ name: opts.weapon ?? 'iron_sword', count: 1 }],
+    },
+    quickBarSlot: 0,
+    setQuickBarSlot: vi.fn((slot: number) => void events.push(`slot ${slot}`)),
+    look: vi.fn(async () => {}),
+    world: { raycast: vi.fn((): unknown => null) },
     pathfinder: { setGoal: vi.fn() },
     lookAt: vi.fn(async () => {}),
     equip: vi.fn(async () => {}),
     attack: vi.fn(() => void events.push('attack')),
-    activateItem: vi.fn(() => void events.push('raise')),
-    deactivateItem: vi.fn(() => void events.push('lower')),
+    activateItem: vi.fn((offhand?: boolean) => void events.push(offhand ? 'raise' : 'draw')),
+    deactivateItem: vi.fn(
+      () => void events.push(bot.heldItem.name === 'bow' ? 'release' : 'lower'),
+    ),
     setControlState: vi.fn((state: string, on: boolean) => {
       if (on && (state === 'left' || state === 'right')) events.push(state);
     }),
@@ -246,5 +260,138 @@ describe('MineflayerActuator sweep safety', () => {
     a.engage(1);
     a.tick(1);
     expect(f.bot.attack).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('MineflayerActuator bow', () => {
+  const kit = [
+    { name: 'bow', count: 1 },
+    { name: 'arrow', count: 16 },
+    { name: 'iron_sword', count: 1 },
+  ];
+  const archer = (x: number, over: Record<string, unknown> = {}) => {
+    const f = fakeBot({ weapon: 'bow', items: kit });
+    f.add(1, 'zombie', x);
+    const a = new MineflayerActuator(f.asBot, {
+      bow: true,
+      bowRange: { minBlocks: 6, maxBlocks: 20 },
+      ...over,
+    });
+    return { f, a };
+  };
+
+  it('draws for a full second (20 ticks), then releases at a target in range, and counts the shot', () => {
+    const { f, a } = archer(12);
+    a.engage(1);
+    ticks(a, 20);
+    expect(f.events.filter((e) => e === 'draw' || e === 'release')).toEqual(['draw']);
+    a.tick(1);
+    expect(f.events.filter((e) => e === 'draw' || e === 'release')).toEqual(['draw', 'release']);
+    expect(a.bowStats.shots).toBe(1);
+    expect(f.bot.attack).not.toHaveBeenCalled();
+  });
+
+  it('aims towards the target, and higher for a farther one', () => {
+    const pitchAt = (x: number) => {
+      const { f, a } = archer(x);
+      a.engage(1);
+      a.tick(1);
+      return f.bot.look.mock.calls[0] as unknown as [number, number];
+    };
+    const [yaw, near] = pitchAt(8);
+    const [, far] = pitchAt(19);
+    expect(yaw).toBeCloseTo(-Math.PI / 2); // the target is towards +x
+    expect(far).toBeGreaterThan(near);
+    expect(Math.abs(near)).toBeLessThan(0.2); // nearly flat at short range
+  });
+
+  it('stands still to shoot once in range', () => {
+    const { f, a } = archer(12);
+    a.engage(1);
+    a.tick(1);
+    expect(f.bot.pathfinder.setGoal).toHaveBeenLastCalledWith(null, false);
+  });
+
+  it('holds the draw while another player is in the line of fire, and never releases', () => {
+    const { f, a } = archer(12);
+    f.add(9, 'Owner', 6, 'player');
+    a.engage(1);
+    ticks(a, 60);
+    expect(f.events).toContain('draw');
+    expect(f.events).not.toContain('release');
+  });
+
+  it('holds the draw while a block is in the way', () => {
+    const { f, a } = archer(12);
+    f.bot.world.raycast.mockReturnValue({ name: 'stone' });
+    a.engage(1);
+    ticks(a, 40);
+    expect(f.events).not.toContain('release');
+  });
+
+  it('uses melee inside the minimum range, and without arrows', () => {
+    for (const [x, items] of [
+      [4, kit],
+      [
+        12,
+        [
+          { name: 'bow', count: 1 },
+          { name: 'iron_sword', count: 1 },
+        ],
+      ],
+    ] as const) {
+      const f = fakeBot({ weapon: 'iron_sword', items: [...items] });
+      f.add(1, 'zombie', x);
+      const a = new MineflayerActuator(f.asBot, {
+        bow: true,
+        bowRange: { minBlocks: 6, maxBlocks: 20 },
+      });
+      a.engage(1);
+      ticks(a, 25);
+      expect(f.events).not.toContain('draw');
+    }
+  });
+
+  it('does nothing with the bow when switched off', () => {
+    const { f, a } = archer(12, { bow: false });
+    a.engage(1);
+    ticks(a, 25);
+    expect(f.events).not.toContain('draw');
+  });
+
+  it('cancels a draw without firing when the target comes too close', () => {
+    const { f, a } = archer(12);
+    a.engage(1);
+    ticks(a, 10); // mid-draw
+    (f.bot.entities[1] as { position: Vec3 }).position = new Vec3(3, 64, 0);
+    f.bot.heldItem = { name: 'iron_sword' };
+    a.tick(1);
+    expect(f.events).not.toContain('release');
+    expect(f.events.some((e) => e.startsWith('slot '))).toBe(true); // switched slot to cancel
+  });
+
+  it('counts a hit when the target is hurt soon after a shot, once per shot', () => {
+    const { f, a } = archer(12);
+    a.engage(1);
+    ticks(a, 21); // one shot
+    f.bot.emit('entityHurt', f.bot.entities[1]);
+    f.bot.emit('entityHurt', f.bot.entities[1]); // e.g. a melee hit afterwards: not an arrow hit
+    expect(a.bowStats).toEqual({ shots: 1, hits: 1 });
+  });
+
+  it('does not count the target being hurt when no shot is in flight', () => {
+    const { f, a } = archer(12);
+    a.engage(1);
+    f.bot.emit('entityHurt', f.bot.entities[1]);
+    expect(a.bowStats).toEqual({ shots: 0, hits: 0 });
+  });
+
+  it('cancels a draw without firing on stop', () => {
+    const { f, a } = archer(12);
+    a.engage(1);
+    ticks(a, 10);
+    a.stop();
+    expect(f.events).not.toContain('release');
+    expect(f.events.some((e) => e.startsWith('slot '))).toBe(true);
   });
 });

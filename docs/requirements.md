@@ -31,7 +31,7 @@ Entities outside line of sight or field of view can be filtered out. This is a s
 
 ### FR-3 Reflex layer
 
-It covers chasing, aiming, attack timing (respecting the weapon's cooldown), choosing the best weapon, retreating, eating, wearing armor, holding up a shield, and strafing. It uses no network calls. Shield use (`rules.shield`) and strafing against mobs (`rules.strafeMobs`) are implemented but off by default, because the survival benchmark showed no clear gain from either (Phase 8). Strafing against players is always on.
+It covers chasing, aiming, attack timing (respecting the weapon's cooldown), choosing the best weapon, retreating, eating, wearing armor, holding up a shield, and strafing. It uses no network calls. Shield use (`rules.shield`) and strafing against mobs (`rules.strafeMobs`) are implemented but off by default, because the survival benchmark showed no clear gain from either (Phase 8). Strafing against players is always on. A bot with a bow and arrows shoots at targets between `rules.bowMinBlocks` and `rules.bowMaxBlocks` away (`rules.bow`, on by default since Phase 9: the benchmark showed less damage in every bow scenario), aims for the arrow's arc and leads moving targets, and never releases when the arrow's path passes near a protected player.
 
 ### FR-4 Strategic layer
 

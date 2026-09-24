@@ -82,6 +82,8 @@ The `ranged` role needs a bot that can fight with a bow. It is also useful on it
 - Run 20 trials each with `rules.bow` on and off.
 - **Decision rule:** `rules.bow` ships on by default only if survival is not lower and mean damage taken is lower. Also record hit rate (arrows that hit, out of arrows fired).
 
+**Result (done 2026-09-24):** with the bow on, all 60 benchmark trials were won and damage fell in every scenario (creeper 0.0 against 18.9, skeleton 0.4 against 2.6, three zombies 0.9 against 3.3), with 72% to 97% of arrows hitting. `rules.bow` ships on. The benchmark found a bug: arrow knockback pushed targets past the engage radius and the bot gave up on them, so a bot that can shoot now keeps its target out to `bowMaxBlocks`. Two parts of the plan were left to the `ranged` role in Phase 10: backing off from a melee mob while shooting (the bot switches to melee under 6 blocks instead), and preferring skeletons and creepers over nearer targets. `rules.bowRangeBlocks` became `rules.bowMinBlocks` and `rules.bowMaxBlocks`.
+
 ## Phase 10: Roles that change behavior (gaps 3, 5)
 
 **Role behaviors** (in `ModeController`, only in a swarm)

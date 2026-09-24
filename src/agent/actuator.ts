@@ -7,6 +7,18 @@ import { isArmorName } from '../reflex/armor.js';
 import { attackStyle } from '../reflex/danger.js';
 import { isShieldCooldown, shouldBlock } from '../reflex/shield.js';
 import { sweepEndangers, weaponSweeps } from '../reflex/sweep.js';
+import {
+  ARROW_LAUNCH_OFFSET,
+  bowStep,
+  estimateVelocity,
+  leadTarget,
+  shotEndangers,
+  shotPath,
+  solveAim,
+  useBow,
+  type BowRange,
+} from '../reflex/bow.js';
+import { Vec3 } from 'vec3';
 import { isProtectedPlayer } from '../reflex/protect.js';
 import { Strafer, pvpAction } from '../reflex/pvp.js';
 import type { Vec3Like } from '../perception/types.js';
@@ -48,7 +60,22 @@ export interface ActuatorOptions {
   shield?: boolean;
   /** Side-step melee mobs while the weapon recharges. */
   strafeMobs?: boolean;
+  /** Shoot with a bow (if there is one, with arrows) at targets within `bowRange`. */
+  bow?: boolean;
+  bowRange?: BowRange;
 }
+
+/** Shots and the hits that followed them, for measuring bow accuracy. */
+export interface BowStats {
+  shots: number;
+  hits: number;
+}
+
+const DEFAULT_BOW_RANGE: BowRange = { minBlocks: 6, maxBlocks: 20 };
+/** A hurt target counts as an arrow hit if it happens this long after a shot. */
+const HIT_WINDOW_MS = 3000;
+/** How many ticks of the target's positions to keep for estimating its velocity. */
+const VELOCITY_HISTORY = 6;
 
 export interface PluginSettings {
   eatBelowFood: number;
@@ -98,12 +125,25 @@ export class MineflayerActuator implements Actuator {
   private shieldDisabledTicks = 0;
   private strafing = false;
   private readonly protectedPlayers: readonly string[];
+  private drawTicks = 0;
+  private bowMode = false;
+  private bowGoal: 'follow' | 'stand' | null = null;
+  private targetHistory: Vec3Like[] = [];
+  private lastShotAt = Number.NEGATIVE_INFINITY;
+  private readonly _bowStats: BowStats = { shots: 0, hits: 0 };
 
   constructor(
     private readonly bot: Bot,
     private readonly options: ActuatorOptions = {},
   ) {
     this.protectedPlayers = options.protectedPlayers ?? [];
+    // Count arrow hits: the target getting hurt shortly after a shot (one hit per shot).
+    bot.on?.('entityHurt', (entity: Entity) => {
+      if (entity.id === this.targetId && Date.now() - this.lastShotAt <= HIT_WINDOW_MS) {
+        this._bowStats.hits++;
+        this.lastShotAt = Number.NEGATIVE_INFINITY;
+      }
+    });
     // An axe hit disables a shield for a while; the server announces it as an item cooldown.
     bot._client?.on(
       'set_cooldown',
@@ -121,6 +161,10 @@ export class MineflayerActuator implements Actuator {
     return this._blocking;
   }
 
+  get bowStats(): BowStats {
+    return { ...this._bowStats };
+  }
+
   private isProtected(target: Entity): boolean {
     return (
       target.type === 'player' && isProtectedPlayer(target.username ?? '', this.protectedPlayers)
@@ -134,6 +178,10 @@ export class MineflayerActuator implements Actuator {
       this.stop();
       return;
     }
+    this.cancelDraw();
+    this.bowMode = false;
+    this.bowGoal = null;
+    this.targetHistory = [];
     this.mode = 'engage';
     this.targetId = targetId;
     this.ticksSinceAttack = Number.POSITIVE_INFINITY; // strike as soon as in reach
@@ -141,6 +189,8 @@ export class MineflayerActuator implements Actuator {
   }
 
   retreatFrom(targetId: number): void {
+    this.cancelDraw();
+    this.bowMode = false;
     const threat = this.bot.entities[targetId];
     if (!threat || !this.bot.pathfinder) return;
     this.mode = 'retreat';
@@ -152,6 +202,8 @@ export class MineflayerActuator implements Actuator {
   }
 
   follow(targetId: number): void {
+    this.cancelDraw();
+    this.bowMode = false;
     const target = this.bot.entities[targetId];
     if (!target || !this.bot.pathfinder) return;
     this.mode = 'follow';
@@ -160,6 +212,8 @@ export class MineflayerActuator implements Actuator {
   }
 
   goTo(position: Vec3Like): void {
+    this.cancelDraw();
+    this.bowMode = false;
     if (!this.bot.pathfinder) return;
     this.mode = 'goto';
     this.targetId = null;
@@ -169,6 +223,8 @@ export class MineflayerActuator implements Actuator {
   }
 
   stop(): void {
+    this.cancelDraw();
+    this.bowMode = false;
     this.lowerShield();
     this.mode = 'idle';
     this.targetId = null;
@@ -198,6 +254,7 @@ export class MineflayerActuator implements Actuator {
         ? this.bot.entities[this.targetId]
         : undefined;
     if (!target?.isValid) {
+      this.cancelDraw();
       this.lowerShield();
       return;
     }
@@ -206,9 +263,19 @@ export class MineflayerActuator implements Actuator {
       return;
     }
 
-    this.equipBestWeapon();
-
     const dist = this.bot.entity.position.distanceTo(target.position);
+    const { x, y, z } = target.position;
+    this.targetHistory.push({ x, y, z });
+    if (this.targetHistory.length > VELOCITY_HISTORY) this.targetHistory.shift();
+
+    const range = this.options.bowRange ?? DEFAULT_BOW_RANGE;
+    if (this.options.bow && useBow(dist, this.bot.inventory.items(), range)) {
+      this.shootBow(target, dist, range, elapsedTicks);
+      return;
+    }
+    if (this.bowMode) this.leaveBowMode(target);
+
+    this.equipBestWeapon();
     if (dist <= AIM_DISTANCE_BLOCKS) this.aimAt(target);
     this.updateShield(dist);
 
@@ -243,6 +310,118 @@ export class MineflayerActuator implements Actuator {
       }
     }
     return sweepEndangers(target.position, others);
+  }
+
+  /**
+   * Fight at range with the bow: stand still once in range, lead the target, draw to full power
+   * and release only with a clear shot that passes nowhere near another player.
+   */
+  private shootBow(target: Entity, dist: number, range: BowRange, elapsedTicks: number): void {
+    this.lowerShield(); // the bow needs the hands
+    if (!this.bowMode) {
+      this.bowMode = true;
+      this.bowGoal = null;
+    }
+    const want: 'follow' | 'stand' = dist > range.maxBlocks - 1 ? 'follow' : 'stand';
+    if (want !== this.bowGoal && this.bot.pathfinder) {
+      this.bowGoal = want;
+      this.bot.pathfinder.setGoal(
+        want === 'follow' ? new goals.GoalFollow(target, range.maxBlocks - 3) : null,
+        want === 'follow',
+      );
+    }
+
+    if (this.bot.heldItem?.name !== 'bow') {
+      this.drawTicks = 0;
+      this.equipNamed('bow');
+      return;
+    }
+
+    const me = this.bot.entity.position;
+    const from = me.offset(0, 1.62 + ARROW_LAUNCH_OFFSET, 0);
+    const aimPoint = target.position.offset(0, (target.height ?? 1.8) * 0.5, 0);
+    const lead = leadTarget(from, aimPoint, estimateVelocity(this.targetHistory));
+    const horizontal = Math.hypot(lead.x - from.x, lead.z - from.z);
+    const solution = solveAim(horizontal, lead.y - from.y);
+
+    let clearShot = false;
+    if (solution) {
+      const yaw = Math.atan2(-(lead.x - from.x), -(lead.z - from.z));
+      void this.bot.look(yaw, solution.pitch, true).catch(() => {});
+      const path = shotPath(from, lead, solution.pitch);
+      clearShot = !shotEndangers(path, this.otherPlayers(target)) && this.pathIsOpen(path);
+    }
+
+    const step = bowStep({ drawTicks: this.drawTicks, clearShot });
+    if (step === 'draw') {
+      this.bot.activateItem();
+      this.drawTicks = elapsedTicks;
+    } else if (step === 'hold') {
+      this.drawTicks += elapsedTicks;
+    } else {
+      this.bot.deactivateItem(); // lets the arrow go
+      this.drawTicks = 0;
+      this._bowStats.shots++;
+      this.lastShotAt = Date.now();
+    }
+  }
+
+  /** Back to melee: stop drawing (without firing) and close in again. */
+  private leaveBowMode(target: Entity): void {
+    this.cancelDraw();
+    this.bowMode = false;
+    this.bowGoal = null;
+    this.bot.pathfinder?.setGoal(new goals.GoalFollow(target, FOLLOW_RANGE_BLOCKS), true);
+  }
+
+  /**
+   * Stop drawing the bow without shooting. Letting go would fire an arrow wherever the bot is
+   * looking, so switch the held slot instead, which cancels the draw.
+   */
+  private cancelDraw(): void {
+    if (this.drawTicks === 0) return;
+    this.drawTicks = 0;
+    const slot = this.bot.quickBarSlot ?? 0;
+    this.bot.setQuickBarSlot?.((slot + 1) % 9);
+  }
+
+  /** Every player the arrow must avoid: everyone except the target. */
+  private otherPlayers(target: Entity): Vec3Like[] {
+    const out: Vec3Like[] = [];
+    for (const e of Object.values(this.bot.entities)) {
+      if (e.type === 'player' && e !== this.bot.entity && e.id !== target.id) out.push(e.position);
+    }
+    return out;
+  }
+
+  /** True when no block interrupts the arrow's path (checked segment by segment). */
+  private pathIsOpen(path: Vec3Like[]): boolean {
+    const world = this.bot.world as unknown as {
+      raycast?: (from: Vec3, dir: Vec3, range: number) => unknown;
+    };
+    if (!world?.raycast) return true;
+    for (let i = 1; i < path.length; i++) {
+      const a = path[i - 1]!;
+      const b = path[i]!;
+      const delta = new Vec3(b.x - a.x, b.y - a.y, b.z - a.z);
+      const len = delta.norm();
+      if (len === 0) continue;
+      if (world.raycast(new Vec3(a.x, a.y, a.z), delta.scaled(1 / len), len) != null) return false;
+    }
+    return true;
+  }
+
+  private equipNamed(name: string): void {
+    if (this.equipping) return;
+    const item = this.bot.inventory.items().find((i) => i.name === name);
+    if (!item) return;
+    this.equipping = true;
+    void this.bot
+      .equip(item, 'hand')
+      .catch(() => {})
+      .finally(() => {
+        this.equipping = false;
+      });
   }
 
   /** Raise or lower the shield for this step (see `shouldBlock`). */

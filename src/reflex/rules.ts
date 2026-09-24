@@ -1,5 +1,6 @@
 import { IDLE, type Intent } from '../intent.js';
 import type { EntitySummary, Snapshot } from '../perception/types.js';
+import { canShoot } from './bow.js';
 import { NEUTRAL_MOBS, estimateFight, weaponFromInventory } from './danger.js';
 import { isProtectedPlayer } from './protect.js';
 
@@ -9,6 +10,9 @@ export interface RuleSettings {
   /** Shield use and strafing against mobs (carried out by the actuator). */
   shield?: boolean;
   strafeMobs?: boolean;
+  bow?: boolean;
+  bowMinBlocks?: number;
+  bowMaxBlocks?: number;
   /** Players never to attack: owner, allies, other bots. */
   protectedPlayers?: string[];
   retreat: boolean;
@@ -52,6 +56,21 @@ export function threatsIn(
 }
 
 /**
+ * `threatsIn`, except that a bot able to shoot keeps its current target out to `bowMaxBlocks`.
+ * An arrow knocks the target back, often past `engageRadiusBlocks`; without this the bot would
+ * drop it mid-fight, and a creeper or skeleton left alone wanders off. New fights still start
+ * only within `engageRadiusBlocks`.
+ */
+function threatsKept(snapshot: Snapshot, rules: RuleSettings, previous: Intent): EntitySummary[] {
+  const shooting = !!rules.bow && rules.bowMaxBlocks !== undefined && canShoot(snapshot.inventory);
+  if (!shooting || previous.tactic !== 'engage') return threatsIn(snapshot, rules);
+  const radius = Math.max(rules.engageRadiusBlocks, rules.bowMaxBlocks!);
+  return threatsIn(snapshot, { ...rules, engageRadiusBlocks: radius }).filter(
+    (e) => e.dist <= rules.engageRadiusBlocks || e.id === previous.targetId,
+  );
+}
+
+/**
  * Deterministic combat policy, and the fallback whenever Jev is unavailable or unsure.
  *
  * - No visible, non-neutral hostile in range: idle.
@@ -68,7 +87,7 @@ export function decideByRules(
   rules: RuleSettings,
   previous: Intent = IDLE,
 ): Intent {
-  const threats = threatsIn(snapshot, rules);
+  const threats = threatsKept(snapshot, rules, previous);
   const nearest = threats[0]; // snapshot entities are sorted nearest first
   if (!nearest) return IDLE;
 

@@ -23,6 +23,12 @@ const rulesBaseSchema = z.object({
   shield: z.boolean(),
   /** Side-step melee mobs while the weapon recharges. Off by default: no measurable effect. */
   strafeMobs: z.boolean(),
+  /** Shoot with a bow (if the bot has one and arrows) at targets between the bow range limits. */
+  bow: z.boolean(),
+  /** Closer than this, the bot switches to its melee weapon. */
+  bowMinBlocks: z.number().min(2).max(64),
+  /** Farther than this, the bot closes in before shooting. */
+  bowMaxBlocks: z.number().min(2).max(64),
   /**
    * Allow retreating at all. Off by default: with no safe place to run to, the survival benchmark
    * shows a bot that fights on survives more often than one that flees (docs/survival-benchmark.md).
@@ -47,9 +53,11 @@ const rulesBaseSchema = z.object({
   /** After a failed retreat, fight back for this long before the rules decide again. */
   fightBackMs: z.number().int().min(0),
 });
-const rulesSchema = rulesBaseSchema.refine((r) => r.retreatHp <= r.resumeHp, {
-  message: 'retreatHp must be <= resumeHp',
-});
+const rulesSchema = rulesBaseSchema
+  .refine((r) => r.retreatHp <= r.resumeHp, { message: 'retreatHp must be <= resumeHp' })
+  .refine((r) => r.bowMinBlocks < r.bowMaxBlocks, {
+    message: 'bowMinBlocks must be < bowMaxBlocks',
+  });
 
 const strategicSchema = z.object({
   /** Ask Jev for decisions. When false (or with no API key) the rules decide alone. */

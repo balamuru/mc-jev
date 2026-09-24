@@ -14,8 +14,8 @@ Each phase ends with `npm run check` passing, the phase's integration scenario w
 | 6     | Multiple bots and swarm                       | FR-10, FR-11     | Done    |
 | 7     | Tuning (optional)                             | none             | Done    |
 | 8     | Shield and strafing against mobs              | FR-3             | Done    |
-| 9     | Bow combat                                    | FR-3             | Next    |
-| 10    | Roles that change behavior                    | FR-11            | Planned |
+| 9     | Bow combat                                    | FR-3             | Done    |
+| 10    | Roles that change behavior                    | FR-11            | Next    |
 | 11    | Test coverage and housekeeping                | FR-2, FR-7       | Planned |
 
 ## Phase 0: Repo and scaffolding
@@ -119,12 +119,27 @@ Phases 8 to 11 close the gaps a review of the implementation against the plan fo
 - **Results:** the shield cut creeper damage by about 17% but lowered survival against three zombies at low HP in two runs. Strafing made no measurable difference. **Both ship off** under the agreed rule, with the numbers in [survival-benchmark.md](survival-benchmark.md#phase-8-shield-and-strafing-against-mobs).
 - **Tests:** unit tests for `shouldBlock`, the first unit tests for the actuator (with a fake Mineflayer bot), and an integration test on a real server in which the shield is equipped and raised and the bot still kills a zombie.
 
+## Phase 9: Bow combat
+
+- **`src/reflex/bow.ts`:** pure functions for everything that can be decided without a server.
+  - `solveAim` simulates an arrow tick by tick (launch speed 3 blocks per tick at full draw, gravity 0.05, drag 0.99) and bisects for the pitch that lands on the target, preferring the flat arc. Out-of-range targets get no solution.
+  - `leadTarget` aims ahead of a moving target by its velocity (measured from the last few positions) times the flight time.
+  - `shotEndangers` refuses a shot whose path passes within 1.5 blocks of a protected player, the same protection that applies to sword swings.
+  - `bowStep` draws for a full 20 ticks, then releases only with a clear shot and holds the draw otherwise.
+  - `useBow` picks the bow between `rules.bowMinBlocks` (6) and `rules.bowMaxBlocks` (20) when the bot has a bow and arrows.
+- **Actuator:** stands still in range (or walks until it is within range), equips the bow, aims and draws. Before each release it raycasts along the whole arc and checks protected players. A cancelled draw switches hotbar slots instead of releasing, so an unsafe shot never flies. It counts arrows fired and hits for the benchmark.
+- **Rules:** a bot that can shoot keeps its current target out to `bowMaxBlocks`. The benchmark found this: an arrow's knockback pushed a creeper past the 16-block engage radius, the bot went idle, and the creeper wandered off.
+- **Jev:** the state includes `bow` and `arrows` (question set v5).
+- **Deviations from the plan:** the bot does not back off from a melee mob while shooting; it switches to its sword under 6 blocks instead. It also does not prefer skeletons and creepers over nearer targets. Both belong to the `ranged` role in Phase 10.
+- **Tests:** unit tests for aiming, leading, shot safety, draw timing and weapon choice, actuator tests with a fake bot, and integration tests on a real server: kills a stationary target at 12 and 20 blocks, kills a skeleton, and never shoots while the owner stands in the line of fire.
+- **Result:** with the bow, every one of 60 benchmark trials was won, and damage fell in all three scenarios (for example 0.4 against 2.6 against a skeleton). About 73% of arrows hit a creeper or skeleton, and 97% hit zombies. **`rules.bow` ships on.** See [survival-benchmark.md](survival-benchmark.md#phase-9-bow-combat).
+
 ## Backlog (not scheduled)
 
 Ideas from the survival discussion, to revisit once the benchmark shows where the bot still dies:
 
 - **Escape destinations.** Pick an open spot away from all threats (and toward home, the spawn point or a bed) and pathfind to it, instead of "get 24 blocks away". This avoids dead ends.
-- **Enemy-specific tactics.** Sprinting works against zombies. Baby zombies and spiders are faster than a sprinting player, so fight or block. Skeletons need broken line of sight. Creepers need 7+ blocks of distance and no melee. The speeds are from memory and should be measured first.
+- **Enemy-specific tactics.** Sprinting works against zombies. Baby zombies and spiders are faster than a sprinting player, so fight or block. Skeletons need broken line of sight. Creepers need 7+ blocks of distance and no melee. The speeds are from memory and should be measured first. Phase 9 found a concrete case: a melee bot that sprints at a creeper from 16 blocks arrives beside it and dies in the explosion (17 of 20 trials).
 - **A creeper-only shield.** Phase 8 showed the shield helps against creepers (about 17% less damage) but not against groups of zombies. Raising it only for creepers may keep the gain without the loss. It would need its own benchmark run.
 - **Emergency tools.** Golden apples, healing potions, a totem of undying in the offhand, raising a shield, and blocking yourself in with blocks (this only stops melee mobs).
 - **Cheaper deaths.** The `keepInventory` gamerule for experiments, and remembering where the bot died.

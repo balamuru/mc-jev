@@ -18,6 +18,8 @@ export interface Actuator {
   setEatingPaused(paused: boolean): void;
   /** True while a shield is raised (optional: only the real actuator has one). */
   readonly blocking?: boolean;
+  /** Arrows shot and hits (optional: only the real actuator shoots). */
+  readonly bowStats?: { shots: number; hits: number };
   /** Per-step upkeep such as aiming and attack timing. `elapsedTicks` game ticks passed since the last call. */
   tick(elapsedTicks: number): void;
 }

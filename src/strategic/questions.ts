@@ -3,10 +3,11 @@ import type { EntitySummary, Snapshot } from '../perception/types.js';
 import { isProtectedPlayer } from '../reflex/protect.js';
 import type { SwarmContext } from '../swarm/member.js';
 import { NEUTRAL_MOBS, armorPoints, attackStyle, mobStats } from '../reflex/danger.js';
+import { arrowCount, hasBow, itemsFromSummary } from '../reflex/bow.js';
 import type { JevAnswer } from './jev.js';
 
 /** Bump whenever a question or its wording changes: every logged decision records it. */
-export const QUESTION_SET_VERSION = 'v4';
+export const QUESTION_SET_VERSION = 'v5';
 
 /** At most this many threats are described to Jev, nearest first. */
 export const MAX_THREATS_IN_STATE = 6;
@@ -82,6 +83,8 @@ export function buildState(
       weapon: self.heldItem ?? 'bare hands',
       armor_points: armorPoints(self.armor),
       shield: self.offhand === 'shield',
+      bow: hasBow(itemsFromSummary(snapshot.inventory)),
+      arrows: arrowCount(itemsFromSummary(snapshot.inventory)),
       in_water: self.inWater,
     },
     players: playersToJudge(snapshot, radiusBlocks, rules).map((e) => ({

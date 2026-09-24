@@ -20,7 +20,7 @@ import { JsonlDecisionLog, type DecisionEntry } from '../src/telemetry/decisionL
 import { makeAgent, sleep, waitFor, type TestAgent } from '../test/integration/helpers.js';
 import { startTestServer, type TestServer } from '../test/integration/serverHarness.js';
 
-type Gear = 'iron' | 'wood' | 'none' | 'iron-shield' | 'wood-shield';
+type Gear = 'iron' | 'wood' | 'none' | 'iron-shield' | 'wood-shield' | 'iron-bow' | 'wood-bow';
 
 interface Scenario {
   id: string;
@@ -28,6 +28,8 @@ interface Scenario {
   mobs: Array<{ type: string; count: number; nbt?: string }>;
   startHp: number;
   gear: Gear;
+  /** How far away the mobs are summoned (default 8 blocks). */
+  spawnDistance?: number;
 }
 
 export const SCENARIOS: Scenario[] = [
@@ -88,6 +90,30 @@ export const SCENARIOS: Scenario[] = [
     gear: 'wood-shield',
   },
   {
+    id: 'creeper-bow',
+    description: '1 creeper 16 blocks away, full HP, wooden sword and a bow, no armor',
+    mobs: [{ type: 'creeper', count: 1 }],
+    startHp: 20,
+    gear: 'wood-bow',
+    spawnDistance: 16,
+  },
+  {
+    id: 'skeleton-bow',
+    description: '1 skeleton 16 blocks away, bot at 10 HP, iron gear and a bow',
+    mobs: [{ type: 'skeleton', count: 1 }],
+    startHp: 10,
+    gear: 'iron-bow',
+    spawnDistance: 16,
+  },
+  {
+    id: 'zombie-x3-bow',
+    description: '3 zombies 16 blocks away, bot at 6 HP, iron gear and a bow',
+    mobs: [{ type: 'zombie', count: 3 }],
+    startHp: 6,
+    gear: 'iron-bow',
+    spawnDistance: 16,
+  },
+  {
     id: 'baby-zombie',
     description: '1 baby zombie, bot at 10 HP, iron gear',
     mobs: [{ type: 'zombie', count: 1, nbt: '{IsBaby:1b}' }],
@@ -130,12 +156,25 @@ const GEAR: Record<Gear, string[]> = {
     'shield',
   ],
   'wood-shield': ['wooden_sword', 'shield'],
+  'iron-bow': [
+    'iron_sword',
+    'iron_helmet',
+    'iron_chestplate',
+    'iron_leggings',
+    'iron_boots',
+    'bow',
+    'arrow 64',
+  ],
+  'wood-bow': ['wooden_sword', 'bow', 'arrow 64'],
 };
 
 interface TrialResult {
   outcome: 'won' | 'timeout' | 'died';
   seconds: number;
   endHp: number;
+  /** Arrows shot and hits that followed, when the bot used a bow. */
+  shots?: number;
+  hits?: number;
 }
 
 function parseArgs(argv: string[]) {
@@ -162,7 +201,9 @@ async function resetBot(server: TestServer, bot: TestAgent, sc: Scenario, name: 
   await server.run(`clear ${name}`, 150);
   await server.run(`effect clear ${name}`, 100);
   await server.run(`tp ${name} 0 -60 0`, 200);
-  const armorCount = GEAR[sc.gear].filter((g) => !g.endsWith('_sword') && g !== 'shield').length;
+  const armorCount = GEAR[sc.gear].filter((g) =>
+    /_(helmet|chestplate|leggings|boots)$/.test(g),
+  ).length;
   const wantsShield = GEAR[sc.gear].includes('shield');
   for (const item of GEAR[sc.gear]) await server.run(`give ${name} ${item}`, 100);
   await waitFor(
@@ -200,13 +241,20 @@ async function runTrial(
   await resetBot(server, bot, sc, name);
   const { agent } = bot;
   const deathsBefore = agent.deaths;
+  const bowBefore = agent.bowStats;
+  const withBow = (r: TrialResult): TrialResult => {
+    const b = agent.bowStats;
+    const shots = b.shots - bowBefore.shots;
+    return shots > 0 ? { ...r, shots, hits: b.hits - bowBefore.hits } : r;
+  };
   const total = sc.mobs.reduce((n, m) => n + m.count, 0);
   let k = 0;
   for (const m of sc.mobs) {
     for (let i = 0; i < m.count; i++, k++) {
       const angle = (2 * Math.PI * k) / total;
-      const dx = Math.round(8 * Math.cos(angle));
-      const dz = Math.round(8 * Math.sin(angle));
+      const r = sc.spawnDistance ?? 8;
+      const dx = Math.round(r * Math.cos(angle));
+      const dz = Math.round(r * Math.sin(angle));
       await server.run(
         `execute at ${name} run summon ${m.type} ~${dx} ~ ~${dz} ${m.nbt ?? ''}`,
         100,
@@ -218,9 +266,9 @@ async function runTrial(
   let lastCheck = 0;
   for (;;) {
     const seconds = (Date.now() - start) / 1000;
-    if (agent.deaths > deathsBefore) return { outcome: 'died', seconds, endHp: 0 };
+    if (agent.deaths > deathsBefore) return withBow({ outcome: 'died', seconds, endHp: 0 });
     if (Date.now() - start > timeoutMs) {
-      return { outcome: 'timeout', seconds, endHp: agent.snapshot()?.self.hp ?? 0 };
+      return withBow({ outcome: 'timeout', seconds, endHp: agent.snapshot()?.self.hp ?? 0 });
     }
     if (Date.now() - lastCheck > 1000) {
       lastCheck = Date.now();
@@ -231,7 +279,7 @@ async function runTrial(
         );
       }
       if (!(await anyAlive(server, types))) {
-        return { outcome: 'won', seconds, endHp: agent.snapshot()?.self.hp ?? 0 };
+        return withBow({ outcome: 'won', seconds, endHp: agent.snapshot()?.self.hp ?? 0 });
       }
     }
     await sleep(100);
@@ -294,6 +342,8 @@ async function main() {
     );
     // No craters: explosions over many trials would otherwise trap the bot or the mob in a pit.
     await server.run('gamerule mob_griefing false');
+    // No natural spawns (slimes appeared mid-trial on the flat world without this).
+    await server.run('gamerule spawn_mobs false');
     bot.agent.start();
     await waitFor(() => bot.agent.state === 'online', 60_000, 'the bot to spawn');
 
@@ -327,16 +377,18 @@ async function main() {
       survivalRate: rs.length ? alive.length / rs.length : NaN,
       meanSecondsToDeath: mean(died.map((r) => r.seconds)),
       meanEndHp: mean(alive.map((r) => r.endHp)),
+      shots: rs.reduce((n, r) => n + (r.shots ?? 0), 0),
+      hits: rs.reduce((n, r) => n + (r.hits ?? 0), 0),
     };
   });
 
   console.log(
-    '\n| Scenario | Trials | Survived | Won | Survival | Mean s to death | Mean end HP |',
+    '\n| Scenario | Trials | Survived | Won | Survival | Mean s to death | Mean end HP | Arrow hits |',
   );
-  console.log('| --- | --- | --- | --- | --- | --- | --- |');
+  console.log('| --- | --- | --- | --- | --- | --- | --- | --- |');
   for (const r of rows) {
     console.log(
-      `| ${r.id} | ${r.trials} | ${r.survived} | ${r.won} | ${fmt(r.survivalRate * 100, 0)}% | ${fmt(r.meanSecondsToDeath)} | ${fmt(r.meanEndHp)} |`,
+      `| ${r.id} | ${r.trials} | ${r.survived} | ${r.won} | ${fmt(r.survivalRate * 100, 0)}% | ${fmt(r.meanSecondsToDeath)} | ${fmt(r.meanEndHp)} | ${r.shots ? `${r.hits}/${r.shots}` : '-'} |`,
     );
   }
 

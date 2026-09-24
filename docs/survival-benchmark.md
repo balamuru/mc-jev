@@ -69,6 +69,21 @@ Every difference is within noise, and one scenario lost a survival, so **`rules.
 
 **A flaw in the benchmark, found and fixed.** Creeper explosions left craters in the flat test world. Over 20 trials they piled up until the bot or the creeper was stuck in a pit where neither could reach the other, and trials ran out the clock. It showed up as 11 to 13 timeouts in 20 creeper trials, with the shield on or off. The benchmark and the integration tests now turn off the `mob_griefing` gamerule, and the creeper numbers above come from the rerun. The earlier creeper results (8 trials, run last in each benchmark) had fewer explosions before them and show no timeouts, but they ran without this fix. `--trace` prints what the bot sees and intends every second, which is how this was found.
 
+## Phase 9: bow combat
+
+The bow scenarios start the mob 16 blocks away, so there is room to shoot, and carry a bow and 64 arrows on top of the usual gear. 20 trials each way. Damage counts a death as losing all the starting HP; the plus-or-minus figure is the standard error.
+
+| Scenario                                        | Bow on: survived | Bow on: damage | Bow off: survived | Bow off: damage | Arrows that hit |
+| ----------------------------------------------- | ---------------- | -------------- | ----------------- | --------------- | --------------- |
+| `creeper-bow` (full HP, wooden sword, no armor) | 20/20            | 0.0 ± 0.0      | 3/20              | 18.9 ± 0.7      | 60/82 (73%)     |
+| `skeleton-bow` (10 HP, iron gear)               | 20/20            | 0.4 ± 0.2      | 20/20             | 2.6 ± 0.4       | 58/81 (72%)     |
+| `zombie-x3-bow` (6 HP, iron gear)               | 20/20            | 0.9 ± 0.2      | 19/20             | 3.3 ± 0.3       | 88/91 (97%)     |
+
+- **Survival is never lower and damage is lower in every scenario, so `rules.bow` ships on.**
+- **Every bow trial was won** (all mobs dead within 30 seconds). A creeper dies before it gets close, and three zombies walking in a line are easy targets. The skeleton is harder to hit, because it strafes.
+- **The creeper gap is partly a melee weakness.** Without the bow, the bot sprints 16 blocks at the creeper, arrives with momentum right next to it, and the explosion kills it (`--trace` shows it dying about 3.4 seconds in, every time). In the 8-block `creeper` scenario the creeper walks to the bot instead, and the bot survives. Keeping away from creepers in melee is on the backlog under enemy-specific tactics.
+- **A bug the benchmark found.** The first run had 11 creeper and 6 skeleton timeouts, with no damage taken. An arrow's knockback pushed the target past `engageRadiusBlocks` (16), the rules stopped counting it as a threat, and the bot went idle while the mob wandered off. A bot that can shoot now keeps its current target out to `bowMaxBlocks`; the table above is the rerun. The first run passed the gate as well (20/20, 20/20 and 19/20 with the bow).
+
 ## Caveats
 
 - **Small samples.** With 8 trials, 75% against 88% is not a real difference, and neither are the end-HP differences in the creeper scenario (explosion damage is either large or nothing). Only the big gaps (25% against 88–100%) are trustworthy. Run `--trials 20` before drawing any finer conclusion.
@@ -86,6 +101,10 @@ npm run benchmark:survival -- --label mine
 # retreating allowed again, or forced off, to compare policies
 npm run benchmark:survival -- --label retreat-on --rules '{"retreat":true}'
 npm run benchmark:survival -- --label retreat-off --rules '{"retreat":false}'
+
+# bow on and off (Phase 9)
+npm run benchmark:survival -- --scenarios creeper-bow,skeleton-bow,zombie-x3-bow --trials 20 --label bow-on --rules '{"bow":true}'
+npm run benchmark:survival -- --scenarios creeper-bow,skeleton-bow,zombie-x3-bow --trials 20 --label bow-off --rules '{"bow":false}'
 
 # more trials for a single scenario
 npm run benchmark:survival -- --scenarios zombie-x3-lowhp --trials 20

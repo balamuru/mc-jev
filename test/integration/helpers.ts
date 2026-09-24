@@ -65,4 +65,7 @@ export async function calmNight(server: TestServer): Promise<void> {
   await server.run('time set night');
   await server.run('gamerule natural_health_regeneration false');
   await server.run('gamerule mob_griefing false');
+  // `spawn-monsters=false` in server.properties is not honored on this version (slimes appeared
+  // mid-trial on the flat world); the gamerule is.
+  await server.run('gamerule spawn_mobs false');
 }

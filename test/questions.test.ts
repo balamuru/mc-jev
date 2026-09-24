@@ -30,6 +30,8 @@ describe('buildState', () => {
       weapon: 'iron_sword',
       armor_points: 15,
       shield: false,
+      bow: false,
+      arrows: 0,
       in_water: false,
     });
   });
@@ -272,8 +274,8 @@ describe('squad in the state and questions', () => {
     expect(alone.target.instructions).not.toContain('squad');
   });
 
-  it('is version v4', () => {
-    expect(QUESTION_SET_VERSION).toBe('v4');
+  it('is version v5', () => {
+    expect(QUESTION_SET_VERSION).toBe('v5');
   });
 });
 
@@ -310,5 +312,14 @@ describe('plain facts about each threat', () => {
       },
     ) as { threats: Array<{ max_health: number; attack_style: string }> };
     expect(s.threats[0]).toMatchObject({ max_health: 20, attack_style: 'melee' });
+  });
+});
+
+describe('bow in the state', () => {
+  it('tells Jev whether the bot has a bow and how many arrows', () => {
+    const s = snap(20, []);
+    const armed = { ...s, inventory: ['bowx1', 'arrowx12', 'spectral_arrowx3', 'iron_swordx1'] };
+    expect(buildState(armed, 16)).toMatchObject({ self: { bow: true, arrows: 15 } });
+    expect(buildState(s, 16)).toMatchObject({ self: { bow: false, arrows: 0 } });
   });
 });

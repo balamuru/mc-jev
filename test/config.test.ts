@@ -110,6 +110,9 @@ describe('reflex and rules settings', () => {
       pvp: true,
       shield: false,
       strafeMobs: false,
+      bow: true,
+      bowMinBlocks: 6,
+      bowMaxBlocks: 20,
       retreat: false,
       retreatHp: 6,
       resumeHp: 14,
@@ -280,5 +283,23 @@ describe('swarm and server stagger settings', () => {
     for (const bot of parseConfig(raw).bots) {
       expect(bot.protectedPlayers.sort()).toEqual(['One', 'Three', 'Two']);
     }
+  });
+});
+
+describe('bow settings', () => {
+  it('rejects a minimum bow range that is not below the maximum', () => {
+    const raw = base();
+    raw.defaults.rules.bowMinBlocks = 20;
+    expect(() => parseConfig(raw)).toThrow(/bowMinBlocks must be < bowMaxBlocks/);
+  });
+
+  it('lets a bot turn the bow off or change its range', () => {
+    const raw = base();
+    raw.bots = [{ username: 'Melee', overrides: { rules: { bow: false, bowMaxBlocks: 12 } } }];
+    expect(parseConfig(raw).bots[0]?.rules).toMatchObject({
+      bow: false,
+      bowMinBlocks: 6,
+      bowMaxBlocks: 12,
+    });
   });
 });

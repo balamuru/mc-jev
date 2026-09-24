@@ -187,6 +187,38 @@ describe('decideByRules with players', () => {
   });
 });
 
+describe('decideByRules with a bow', () => {
+  const bowRules = { ...rules, bow: true, bowMinBlocks: 6, bowMaxBlocks: 20 };
+  const archer = (hp: number, entities: Parameters<typeof snap>[1], arrows = 16) => {
+    const s = snap(hp, entities);
+    return { ...s, inventory: [...s.inventory, 'bowx1', ...(arrows ? [`arrowx${arrows}`] : [])] };
+  };
+  const engaging = (id: number): Intent => ({ tactic: 'engage', targetId: id, reason: 'x' });
+
+  it('keeps shooting its current target when knockback pushes it past the engage radius', () => {
+    expect(decideByRules(archer(20, [mob(1, 18)]), bowRules, engaging(1))).toMatchObject({
+      tactic: 'engage',
+      targetId: 1,
+    });
+  });
+
+  it('drops the target beyond bow range', () => {
+    expect(decideByRules(archer(20, [mob(1, 21)]), bowRules, engaging(1))).toEqual(IDLE);
+  });
+
+  it('does not start a new fight beyond the engage radius', () => {
+    expect(decideByRules(archer(20, [mob(1, 18)]), bowRules)).toEqual(IDLE);
+    expect(decideByRules(archer(20, [mob(2, 18)]), bowRules, engaging(1))).toEqual(IDLE);
+  });
+
+  it('keeps the usual radius without arrows or with the bow off', () => {
+    expect(decideByRules(archer(20, [mob(1, 18)], 0), bowRules, engaging(1))).toEqual(IDLE);
+    expect(
+      decideByRules(archer(20, [mob(1, 18)]), { ...bowRules, bow: false }, engaging(1)),
+    ).toEqual(IDLE);
+  });
+});
+
 describe('intentChanged', () => {
   it('compares tactic and target, not the reason', () => {
     const a: Intent = { tactic: 'engage', targetId: 1, reason: 'x' };
