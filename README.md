@@ -2,7 +2,7 @@
 
 An experiment in controlling a Minecraft (Java Edition) character with software. Bots built on [Mineflayer](https://github.com/PrismarineJS/mineflayer) perceive their surroundings, fight and act on their own. Fast reflexes are plain code. Judgment calls, such as whether to engage or retreat, come from [Jev](https://docs.typesafe.ai), TypeSafe's typed-decision model, reached through OpenRouter.
 
-**Status:** Phase 0 (scaffolding). The config module and tests exist, and the bot itself starts in Phase 1. See [docs/phases.md](docs/phases.md).
+**Status:** Phase 1 is done: bots can connect to a local server, reconnect after failures, and report what they see. Fighting is next (Phase 2). See [docs/phases.md](docs/phases.md).
 
 ## How it works
 
@@ -17,11 +17,11 @@ Both tick rates are settings. Jev costs about $0.08 per hour per bot at the defa
 ```bash
 npm install
 cp .env.example .env    # add your OpenRouter key
-npm run dev             # validates config/default.json and prints each bot's settings
+npm run dev             # connects the bots in config/default.json and prints what they perceive
 npm run check           # lint + typecheck + unit tests
 ```
 
-Node.js 20 or newer is required, and Java 21 or newer for the local server (Phase 1).
+Node.js 20 or newer is required, and Java 21 or newer for the local server (`./scripts/server.sh`).
 
 ## Documentation
 

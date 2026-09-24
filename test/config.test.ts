@@ -75,3 +75,29 @@ describe('config', () => {
     expect(parseConfig(base(), { TYPESAFE_API_KEY: '' }).jevApi.apiKey).toBeUndefined();
   });
 });
+
+describe('perception and debug settings', () => {
+  it('has perception defaults that disable visibility filtering', () => {
+    const [bot] = parseConfig(base()).bots;
+    expect(bot?.perception).toEqual({
+      radiusBlocks: 24,
+      maxEntities: 8,
+      fovDegrees: 360,
+      requireLineOfSight: false,
+    });
+    expect(parseConfig(base()).debug.snapshotIntervalMs).toBe(1000);
+  });
+
+  it('lets a bot override perception settings individually', () => {
+    const raw = base();
+    raw.bots = [{ username: 'Scout', overrides: { perception: { fovDegrees: 120 } } }];
+    const [bot] = parseConfig(raw).bots;
+    expect(bot?.perception).toMatchObject({ fovDegrees: 120, radiusBlocks: 24 });
+  });
+
+  it('rejects an out-of-range field of view', () => {
+    const raw = base();
+    raw.defaults.perception.fovDegrees = 10;
+    expect(() => parseConfig(raw)).toThrow(/Invalid config/);
+  });
+});

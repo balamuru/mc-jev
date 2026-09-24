@@ -2,16 +2,16 @@
 
 Each phase ends with `npm run check` passing, the phase's integration scenario working where there is one, the docs updated, and a commit you have approved.
 
-| Phase | Scope                                         | Requirements     | Status      |
-| ----- | --------------------------------------------- | ---------------- | ----------- |
-| 0     | Repo and scaffolding                          | FR-9             | In progress |
-| 1     | Server, connection and perception             | FR-1, FR-2       | Planned     |
-| 2     | Reflex layer: rules-only fighter against mobs | FR-3             | Planned     |
-| 3     | Jev strategic layer against mobs              | FR-4, FR-5, FR-8 | Planned     |
-| 4     | Modes and chat commands                       | FR-6             | Planned     |
-| 5     | Player combat                                 | FR-7             | Planned     |
-| 6     | Multiple bots and swarm                       | FR-10, FR-11     | Planned     |
-| 7     | Tuning (optional)                             | none             | Planned     |
+| Phase | Scope                                         | Requirements     | Status  |
+| ----- | --------------------------------------------- | ---------------- | ------- |
+| 0     | Repo and scaffolding                          | FR-9             | Done    |
+| 1     | Server, connection and perception             | FR-1, FR-2       | Done    |
+| 2     | Reflex layer: rules-only fighter against mobs | FR-3             | Next    |
+| 3     | Jev strategic layer against mobs              | FR-4, FR-5, FR-8 | Planned |
+| 4     | Modes and chat commands                       | FR-6             | Planned |
+| 5     | Player combat                                 | FR-7             | Planned |
+| 6     | Multiple bots and swarm                       | FR-10, FR-11     | Planned |
+| 7     | Tuning (optional)                             | none             | Planned |
 
 ## Phase 0: Repo and scaffolding
 

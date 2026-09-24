@@ -1,8 +1,26 @@
 {
-  "server": { "host": "localhost", "port": 25565, "version": false },
-  "gateway": { "maxCallsPerMinute": 60, "dailyBudgetUsd": 1.0 },
+  "server": {
+    "host": "localhost",
+    "port": 25565,
+    "version": false
+  },
+  "gateway": {
+    "maxCallsPerMinute": 60,
+    "dailyBudgetUsd": 1.0
+  },
+  "debug": {
+    "snapshotIntervalMs": 1000
+  },
   "defaults": {
-    "reflex": { "everyTicks": 1 },
+    "perception": {
+      "radiusBlocks": 24,
+      "maxEntities": 8,
+      "fovDegrees": 360,
+      "requireLineOfSight": false
+    },
+    "reflex": {
+      "everyTicks": 1
+    },
     "strategic": {
       "intervalMs": 2000,
       "eventTriggers": ["hurt", "newThreat", "lowHp"],
@@ -12,8 +30,16 @@
       "model": "jev-latest",
       "timeoutMs": 800,
       "maxRetries": 0,
-      "thresholds": { "act": 0.7, "cautious": 0.5 }
+      "thresholds": {
+        "act": 0.7,
+        "cautious": 0.5
+      }
     }
   },
-  "bots": [{ "username": "JevBot", "role": "fighter" }]
+  "bots": [
+    {
+      "username": "JevBot",
+      "role": "fighter"
+    }
+  ]
 }

@@ -34,7 +34,7 @@ Jev runs through OpenRouter:
 - **Without a key:** leave `TYPESAFE_API_KEY` empty, and every bot runs on its rules alone.
 - **Using TypeSafe directly instead:** set `TYPESAFE_API_KEY` to a TypeSafe key and remove `TYPESAFE_BASE_URL`.
 
-## 3. Start a local Minecraft server (from Phase 1)
+## 3. Start a local Minecraft server
 
 ```bash
 ./scripts/server.sh
@@ -42,9 +42,11 @@ Jev runs through OpenRouter:
 
 The script:
 
-- downloads Paper into `server/`, using the newest Minecraft version Mineflayer supports
-- asks you before accepting the Minecraft EULA
+- downloads Paper into `server/` and verifies its checksum. The default version is 26.1.2, which is within the newest version Mineflayer supports (26.1). Override it with `MC_VERSION`.
+- asks you before accepting the Minecraft EULA (https://aka.ms/MinecraftEULA)
 - sets `online-mode=false` so bots can join without Mojang accounts
+
+To download without starting the server, run `./scripts/server.sh --download-only`. `MC_MEMORY` sets the Java heap size (default `2G`). Leave the server running in its own terminal while you run the bot.
 
 **Do not expose this server to the internet.**
 
@@ -54,9 +56,13 @@ The script:
 npm run dev
 ```
 
-In Phase 0 this only checks `config/default.json` and prints each bot's settings.
+This prints each bot's settings, connects every bot in `config/default.json` to the server, and prints what each one perceives once a second:
 
-From Phase 1 onwards, the bots join the server. To use a different config file, set `MC_JEV_CONFIG=path/to/config.json`.
+```
+[JevBot] hp 20 food 20 at (12, 64, -3) holding empty hand | zombie 5.2m ahead approaching, Steve 12.0m left
+```
+
+If the server goes away, bots reconnect with exponential backoff (1s up to 30s). Press Ctrl+C to stop them. To use a different config file, set `MC_JEV_CONFIG=path/to/config.json`.
 
 ### Chat commands (from Phase 4)
 
@@ -80,7 +86,7 @@ npx vitest run -t "applies per-bot overrides" # one test by name
 npm run test:watch                # watch mode
 npm run lint && npm run typecheck
 npm run check                     # lint + typecheck + unit tests (what CI runs, minus format)
-npm run test:integration          # needs the local server running (from Phase 1)
+npm run test:integration          # needs the local server running (see step 3)
 ```
 
 ## Configuration reference (`config/default.json`)
@@ -99,18 +105,28 @@ npm run test:integration          # needs the local server running (from Phase 1
 | `gateway.maxCallsPerMinute` | Maximum Jev calls per minute, across all bots                                 | 60      |
 | `gateway.dailyBudgetUsd`    | Daily Jev spending cap. Once reached, bots use rules only. `0` turns Jev off. | 1.0     |
 
+### Debugging
+
+| Setting                    | Meaning                                                        | Default |
+| -------------------------- | -------------------------------------------------------------- | ------- |
+| `debug.snapshotIntervalMs` | How often each bot prints what it perceives. `0` turns it off. | 1000    |
+
 ### Per-bot defaults
 
-| Setting                                             | Meaning                                                        | Default                      |
-| --------------------------------------------------- | -------------------------------------------------------------- | ---------------------------- |
-| `defaults.reflex.everyTicks`                        | Run the reflex layer every N game ticks (one tick is 50ms)     | 1                            |
-| `defaults.strategic.intervalMs`                     | Time between periodic strategic decisions                      | 2000                         |
-| `defaults.strategic.eventTriggers`                  | Events that trigger an immediate decision                      | `hurt`, `newThreat`, `lowHp` |
-| `defaults.strategic.minGapMs`                       | Minimum time between any two decisions                         | 250                          |
-| `defaults.jev.model`                                | Jev model                                                      | `jev-latest`                 |
-| `defaults.jev.timeoutMs`, `defaults.jev.maxRetries` | Timeout per call, and how many retries                         | 800, 0                       |
-| `defaults.jev.thresholds.act`                       | Confidence needed to act on a decision                         | 0.7                          |
-| `defaults.jev.thresholds.cautious`                  | Confidence needed to act cautiously. Below this, rules decide. | 0.5                          |
+| Setting                                             | Meaning                                                                              | Default                      |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------- |
+| `defaults.perception.radiusBlocks`                  | Ignore entities farther away than this                                               | 24                           |
+| `defaults.perception.maxEntities`                   | Keep at most this many entities (nearest first)                                      | 8                            |
+| `defaults.perception.fovDegrees`                    | Horizontal field of view. Entities outside it are dropped. 360 turns the filter off. | 360                          |
+| `defaults.perception.requireLineOfSight`            | Drop entities behind walls, so the bot can't see through them                        | false                        |
+| `defaults.reflex.everyTicks`                        | Run the reflex layer every N game ticks (one tick is 50ms)                           | 1                            |
+| `defaults.strategic.intervalMs`                     | Time between periodic strategic decisions                                            | 2000                         |
+| `defaults.strategic.eventTriggers`                  | Events that trigger an immediate decision                                            | `hurt`, `newThreat`, `lowHp` |
+| `defaults.strategic.minGapMs`                       | Minimum time between any two decisions                                               | 250                          |
+| `defaults.jev.model`                                | Jev model                                                                            | `jev-latest`                 |
+| `defaults.jev.timeoutMs`, `defaults.jev.maxRetries` | Timeout per call, and how many retries                                               | 800, 0                       |
+| `defaults.jev.thresholds.act`                       | Confidence needed to act on a decision                                               | 0.7                          |
+| `defaults.jev.thresholds.cautious`                  | Confidence needed to act cautiously. Below this, rules decide.                       | 0.5                          |
 
 ### Bots
 

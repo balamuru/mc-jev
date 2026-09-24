@@ -34,7 +34,19 @@ const jevSchema = z.object({
   }),
 });
 
+const perceptionSchema = z.object({
+  /** Entities farther than this many blocks are ignored. */
+  radiusBlocks: z.number().min(1).max(128),
+  /** Keep at most this many entities in a snapshot (nearest first). */
+  maxEntities: z.number().int().min(1).max(64),
+  /** Horizontal field of view in degrees; 360 disables the filter. */
+  fovDegrees: z.number().min(30).max(360),
+  /** Drop entities the bot has no line of sight to (so it cannot see through walls). */
+  requireLineOfSight: z.boolean(),
+});
+
 const agentSettingsSchema = z.object({
+  perception: perceptionSchema,
   reflex: reflexSchema,
   strategic: strategicSchema,
   jev: jevSchema,
@@ -54,6 +66,11 @@ const serverSchema = z.object({
   version: z.union([z.string(), z.literal(false)]),
 });
 
+const debugSchema = z.object({
+  /** Print each bot's snapshot this often; 0 turns it off. */
+  snapshotIntervalMs: z.number().int().min(0),
+});
+
 const botEntrySchema = z.object({
   username: z.string().regex(/^\w{3,16}$/, 'Minecraft usernames are 3-16 letters, digits or _'),
   role: z.enum(['fighter', 'tank', 'ranged', 'support', 'scout']).default('fighter'),
@@ -61,6 +78,7 @@ const botEntrySchema = z.object({
   /** Per-bot overrides of `defaults`. */
   overrides: z
     .object({
+      perception: perceptionSchema.partial(),
       reflex: reflexSchema.partial(),
       strategic: strategicSchema.partial(),
       jev: jevSchema
@@ -75,6 +93,7 @@ const botEntrySchema = z.object({
 const fileSchema = z.object({
   server: serverSchema,
   gateway: gatewaySchema,
+  debug: debugSchema,
   defaults: agentSettingsSchema,
   bots: z.array(botEntrySchema).min(1),
 });
@@ -91,6 +110,7 @@ export interface BotConfig extends AgentSettings {
 export interface Config {
   server: ConfigFile['server'];
   gateway: ConfigFile['gateway'];
+  debug: ConfigFile['debug'];
   bots: BotConfig[];
   jevApi: { apiKey?: string; baseURL?: string };
 }
@@ -116,6 +136,7 @@ export function parseConfig(raw: unknown, env: NodeJS.ProcessEnv = {}): Config {
   const bots = file.bots.map((entry): BotConfig => {
     const o = entry.overrides;
     const settings = agentSettingsSchema.parse({
+      perception: { ...file.defaults.perception, ...o.perception },
       reflex: { ...file.defaults.reflex, ...o.reflex },
       strategic: { ...file.defaults.strategic, ...o.strategic },
       jev: {
@@ -130,6 +151,7 @@ export function parseConfig(raw: unknown, env: NodeJS.ProcessEnv = {}): Config {
   return {
     server,
     gateway: file.gateway,
+    debug: file.debug,
     bots,
     jevApi: {
       apiKey: env.TYPESAFE_API_KEY || undefined,
