@@ -5,10 +5,11 @@ import type { Snapshot } from '../perception/types.js';
 import { decideByRules, threatsIn, type RuleSettings } from '../reflex/rules.js';
 import type { DecisionEntry, DecisionSink } from '../telemetry/decisionLog.js';
 import type { JevGateway } from './gateway.js';
-import { decideWithJev, type Thresholds } from './policy.js';
+import { decideWithJev, judgeHostilePlayers, type Thresholds } from './policy.js';
 import {
   QUESTION_SET_VERSION,
   buildQuestions,
+  playersToJudge,
   buildState,
   parseJudgment,
   type Judgment,
@@ -42,6 +43,8 @@ export interface StrategicDeps {
   apply: (intent: Intent, ttlMs: number) => void;
   /** Hand control back to the rules straight away. */
   clear: () => void;
+  /** Players Jev judged to be about to attack; the caller marks them hostile for a while. */
+  onHostilePlayers?: (names: string[], ttlMs: number) => void;
   log: Logger;
   decisions?: DecisionSink;
   now?: () => number;
@@ -49,6 +52,8 @@ export interface StrategicDeps {
 
 /** An answer is thrown away if HP fell by this much while the request was in flight. */
 export const STALE_HP_DROP = 5;
+/** How long a player Jev judged hostile stays hostile without further evidence. */
+export const HOSTILE_PLAYER_TTL_MS = 10_000;
 /** How long Jev's intent is held, as a multiple of the decision interval, before the rules resume. */
 export const OVERRIDE_TTL_INTERVALS = 1.5;
 /** ...but never shorter than this. */
@@ -113,7 +118,12 @@ export class StrategicLayer {
     if (this.deps.active && !this.deps.active()) return;
 
     const hp = snapshot.self.hp;
-    const ids = new Set(threatsIn(snapshot, rules.engageRadiusBlocks).map((e) => e.id));
+    const ids = new Set(
+      [
+        ...threatsIn(snapshot, rules),
+        ...playersToJudge(snapshot, rules.engageRadiusBlocks, rules),
+      ].map((e) => e.id),
+    );
     const triggers: StrategicTrigger[] = [];
     if ([...ids].some((id) => !this.seenThreats.has(id))) triggers.push('newThreat');
     if (this.lastHp !== null && hp < this.lastHp - 0.4) triggers.push('hurt');
@@ -127,8 +137,14 @@ export class StrategicLayer {
     if (fired) this.request(`event:${fired}`);
   }
 
+  /** True when there is something to decide about: a threat, or a stranger whose intent Jev can judge. */
   private hasThreats(snapshot: Snapshot | null): snapshot is Snapshot {
-    return snapshot !== null && threatsIn(snapshot, this.deps.rules.engageRadiusBlocks).length > 0;
+    if (snapshot === null) return false;
+    const { rules } = this.deps;
+    return (
+      threatsIn(snapshot, rules).length > 0 ||
+      playersToJudge(snapshot, rules.engageRadiusBlocks, rules).length > 0
+    );
   }
 
   private request(trigger: string): void {
@@ -152,8 +168,8 @@ export class StrategicLayer {
       agentId,
       {
         model: jev.model,
-        state: buildState(asked, rules.engageRadiusBlocks),
-        questions: buildQuestions(asked, rules.engageRadiusBlocks),
+        state: buildState(asked, rules.engageRadiusBlocks, rules),
+        questions: buildQuestions(asked, rules.engageRadiusBlocks, rules),
       },
       { timeoutMs: jev.timeoutMs, maxRetries: jev.maxRetries },
     );
@@ -200,6 +216,9 @@ export class StrategicLayer {
       return;
     }
 
+    const hostile = judgeHostilePlayers(judgment, current, rules);
+    if (hostile.length) this.deps.onHostilePlayers?.(hostile, HOSTILE_PLAYER_TTL_MS);
+
     const rulesIntent = decideByRules(current, rules, this.deps.currentIntent());
     const decision = decideWithJev(judgment, rulesIntent, current, rules, jev.thresholds);
     if (decision.source === 'jev') {
@@ -217,6 +236,7 @@ export class StrategicLayer {
       answers: summarize(judgment),
       outcome: decision.source === 'jev' ? 'applied' : 'rules',
       why: decision.why,
+      ...(hostile.length ? { hostilePlayers: hostile } : {}),
       intent: {
         tactic: decision.intent.tactic,
         targetId: decision.intent.targetId,

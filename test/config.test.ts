@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { loadConfig, parseConfig } from '../src/config.js';
+import { loadConfig, parseConfig, protectedFor } from '../src/config.js';
 
 const base = () => JSON.parse(readFileSync('config/default.json', 'utf8'));
 
@@ -107,6 +107,7 @@ describe('reflex and rules settings', () => {
     const [bot] = parseConfig(base()).bots;
     expect(bot?.reflex).toEqual({ enabled: true, everyTicks: 1 });
     expect(bot?.rules).toEqual({
+      pvp: true,
       retreat: false,
       retreatHp: 6,
       resumeHp: 14,
@@ -195,5 +196,48 @@ describe('bot modes and owners', () => {
     const raw = base();
     raw.bots = [{ username: 'Alpha', mode: 'follow' }];
     expect(() => parseConfig(raw)).toThrow(/Invalid config/);
+  });
+});
+
+describe('allies, protected players and pvp', () => {
+  it('protects the owner, the allies and every bot in the config, without duplicates', () => {
+    const raw = base();
+    raw.bots = [
+      { username: 'Alpha', owner: 'Boss', allies: ['Friend', 'boss'] },
+      { username: 'Bravo' },
+    ];
+    const [alpha, bravo] = parseConfig(raw).bots;
+    expect(alpha?.protectedPlayers.map((n) => n.toLowerCase()).sort()).toEqual([
+      'alpha',
+      'boss',
+      'bravo',
+      'friend',
+    ]);
+    expect(bravo?.protectedPlayers.map((n) => n.toLowerCase()).sort()).toEqual(['alpha', 'bravo']);
+  });
+
+  it('always protects at least the bot’s own swarm', () => {
+    expect(parseConfig(base()).bots[0]?.protectedPlayers).toEqual(['JevBot']);
+  });
+
+  it('defaults to fighting back, and lets a bot switch that off', () => {
+    const raw = base();
+    raw.bots = [{ username: 'Pacifist', overrides: { rules: { pvp: false } } }];
+    expect(parseConfig(raw).bots[0]?.rules.pvp).toBe(false);
+    expect(parseConfig(base()).bots[0]?.rules.pvp).toBe(true);
+  });
+});
+
+describe('protectedFor', () => {
+  it('always includes the owner, however the list was built', () => {
+    expect(protectedFor({ owner: 'Boss', protectedPlayers: ['JevBot'] })).toEqual([
+      'Boss',
+      'JevBot',
+    ]);
+    expect(protectedFor({ owner: 'Boss', protectedPlayers: ['Boss', 'Pal'] })).toEqual([
+      'Boss',
+      'Pal',
+    ]);
+    expect(protectedFor({ owner: undefined, protectedPlayers: ['Pal'] })).toEqual(['Pal']);
   });
 });

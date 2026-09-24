@@ -42,6 +42,8 @@ export interface ObserveInput {
   entities: EntityLike[];
   /** The owner's entity, if known. */
   owner?: EntityLike | null;
+  /** Lower-case names of players currently considered hostile (they attacked, or Jev judged them a threat). */
+  hostilePlayers?: ReadonlySet<string>;
   /** Returns true when nothing solid blocks the line between two points. */
   hasLineOfSight?: (from: Vec3Like, to: Vec3Like) => boolean;
 }
@@ -78,6 +80,8 @@ export interface EntitySummary {
   bearing: Bearing;
   approaching: boolean;
   held: string | null;
+  /** For a player: whether they have attacked the bot, or were judged a threat, recently. */
+  provoked?: boolean;
   /** Whether it is inside the field of view and (if checked) in line of sight. */
   visible: boolean;
 }

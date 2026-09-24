@@ -10,7 +10,7 @@ Each phase ends with `npm run check` passing, the phase's integration scenario w
 | 2.5   | Survival hardening                            | FR-12            | Done    |
 | 3     | Jev strategic layer against mobs              | FR-4, FR-5, FR-8 | Done    |
 | 4     | Modes and chat commands                       | FR-6             | Done    |
-| 5     | Player combat                                 | FR-7             | Planned |
+| 5     | Player combat                                 | FR-7             | Done    |
 | 6     | Multiple bots and swarm                       | FR-10, FR-11     | Planned |
 | 7     | Tuning (optional)                             | none             | Planned |
 
@@ -77,11 +77,11 @@ The rules-only fighter could die while retreating: auto-eat made it stop and eat
 
 ## Phase 5: Player combat
 
-- Players are added to the snapshot.
-- Jev judges whether a player is hostile.
-- The owner and allowlisted players are never attacked. This safety rule is enforced in code, not by Jev.
-- Player-vs-player tactics.
-- **Test:** an integration match against a second, scripted bot acting as the opponent.
+- **Who attacked me.** `ProvocationTracker` records players who hit the bot, from Mineflayer's `entityHurt` (which names the attacker) or from a swing seen near the bot at the moment its HP dropped, ignoring drops when a mob is right next to it.
+- **Safety first.** The owner, `bots[].allies` and every bot in the config are protected. The check is in the rules, in Jev's target list and in the actuator, and the owner is always included however the config was built.
+- **Jev judges strangers** with one yes/no question per nearby unfamiliar player, acted on only when Jev is very sure, the player is armed and close (see FR-7).
+- **PvP tactics** (`src/reflex/pvp.ts`): jump-crits, no sprinting in reach, and strafing.
+- **Tests:** unit tests for the tracker, protection, PvP timing, the rules with players, the questions and the policy; agent tests for attribution, protection and Jev-judged hostility; and an integration test against a scripted opponent on a real server (a bot that attacks is fought and beaten, a bystander is left alone, and the owner can hit the bot without being hit back).
 
 ## Phase 6: Multiple bots and swarm
 

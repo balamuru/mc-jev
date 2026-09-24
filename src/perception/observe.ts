@@ -59,10 +59,14 @@ function summarize(
     visible = input.hasLineOfSight(from, to);
   }
 
+  const kind = e.username ?? e.name ?? e.type;
   return {
     id: e.id,
-    kind: e.username ?? e.name ?? e.type,
+    kind,
     category,
+    ...(category === 'player'
+      ? { provoked: input.hostilePlayers?.has(kind.toLowerCase()) ?? false }
+      : {}),
     dist: round1(dist),
     bearing: bearingLabel(rel),
     approaching: isApproaching(e.position, e.velocity, self.position),

@@ -4,6 +4,8 @@ import armorManager from 'mineflayer-armor-manager';
 import { loader as autoEat } from 'mineflayer-auto-eat';
 import type { Entity } from 'prismarine-entity';
 import { isArmorName } from '../reflex/armor.js';
+import { isProtectedPlayer } from '../reflex/protect.js';
+import { Strafer, pvpAction } from '../reflex/pvp.js';
 import type { Vec3Like } from '../perception/types.js';
 import { bestWeapon, cooldownTicks } from '../reflex/weapons.js';
 import type { Actuator } from '../reflex/loop.js';
@@ -23,6 +25,8 @@ export const ATTACK_REACH_BLOCKS = 3.0;
 const RETREAT_DISTANCE_BLOCKS = 24;
 /** How close the bot stays to an entity it is following. */
 const FOLLOW_OWNER_RANGE_BLOCKS = 3;
+/** Against a player, side-step while within this many blocks. */
+const STRAFE_RANGE_BLOCKS = 5;
 /** How close counts as having arrived at a `goto` point. */
 const ARRIVE_RANGE_BLOCKS = 2;
 /** Aim at the target only when it is this close, to save work while chasing. */
@@ -68,12 +72,29 @@ export class MineflayerActuator implements Actuator {
   private targetId: number | null = null;
   private ticksSinceAttack = Number.POSITIVE_INFINITY;
   private equipping = false;
+  private ticksSinceJump = Number.POSITIVE_INFINITY;
+  private ticksWaitingForCrit = 0;
+  private readonly strafer = new Strafer();
 
-  constructor(private readonly bot: Bot) {}
+  /** `protectedPlayers` are never attacked, whatever the intent says: a last safety net. */
+  constructor(
+    private readonly bot: Bot,
+    private readonly protectedPlayers: readonly string[] = [],
+  ) {}
+
+  private isProtected(target: Entity): boolean {
+    return (
+      target.type === 'player' && isProtectedPlayer(target.username ?? '', this.protectedPlayers)
+    );
+  }
 
   engage(targetId: number): void {
     const target = this.bot.entities[targetId];
     if (!target || !this.bot.pathfinder) return;
+    if (this.isProtected(target)) {
+      this.stop();
+      return;
+    }
     this.mode = 'engage';
     this.targetId = targetId;
     this.ticksSinceAttack = Number.POSITIVE_INFINITY; // strike as soon as in reach
@@ -111,6 +132,8 @@ export class MineflayerActuator implements Actuator {
   stop(): void {
     this.mode = 'idle';
     this.targetId = null;
+    this.strafer.reset();
+    this.ticksWaitingForCrit = 0;
     this.bot.pathfinder?.setGoal(null);
     this.bot.clearControlStates();
   }
@@ -131,14 +154,60 @@ export class MineflayerActuator implements Actuator {
     if (this.mode !== 'engage' || this.targetId === null) return;
     const target = this.bot.entities[this.targetId];
     if (!target?.isValid) return;
+    if (this.isProtected(target)) {
+      this.stop();
+      return;
+    }
 
     this.equipBestWeapon();
 
     const dist = this.bot.entity.position.distanceTo(target.position);
     if (dist <= AIM_DISTANCE_BLOCKS) this.aimAt(target);
-    if (dist <= ATTACK_REACH_BLOCKS && this.ticksSinceAttack >= this.cooldown()) {
+
+    if (target.type === 'player') {
+      this.fightPlayer(target, dist, elapsedTicks);
+    } else if (dist <= ATTACK_REACH_BLOCKS && this.ticksSinceAttack >= this.cooldown()) {
       this.bot.attack(target);
       this.ticksSinceAttack = 0;
+    }
+  }
+
+  /**
+   * Fighting a player: jump so the hit lands as a critical, don't sprint while in reach (it
+   * cancels crits), and strafe so they have a harder time landing their own hits.
+   */
+  private fightPlayer(target: Entity, dist: number, elapsedTicks: number): void {
+    this.ticksSinceJump += elapsedTicks;
+    const ready = this.ticksSinceAttack >= this.cooldown();
+
+    if (dist <= STRAFE_RANGE_BLOCKS) {
+      const side = this.strafer.next(elapsedTicks);
+      this.bot.setControlState('left', side === 'left');
+      this.bot.setControlState('right', side === 'right');
+    } else {
+      this.bot.setControlState('left', false);
+      this.bot.setControlState('right', false);
+    }
+
+    const action = pvpAction({
+      dist,
+      onGround: this.bot.entity.onGround,
+      velocityY: this.bot.entity.velocity.y,
+      ticksSinceAttack: this.ticksSinceAttack,
+      cooldownTicks: this.cooldown(),
+      ticksSinceJump: this.ticksSinceJump,
+      ticksWaitingForCrit: this.ticksWaitingForCrit,
+    });
+    this.bot.setControlState('sprint', action.sprint);
+    this.bot.setControlState('jump', action.jump);
+    if (action.jump) this.ticksSinceJump = 0;
+
+    if (action.attack) {
+      this.bot.attack(target);
+      this.ticksSinceAttack = 0;
+      this.ticksWaitingForCrit = 0;
+    } else if (ready && dist <= ATTACK_REACH_BLOCKS) {
+      this.ticksWaitingForCrit += elapsedTicks;
     }
   }
 

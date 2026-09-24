@@ -32,6 +32,8 @@ export interface DecisionEntry {
     threatLevel: { score: number; confidence: number };
     ambush: number;
   };
+  /** Players Jev judged to be about to attack, and who were therefore marked hostile. */
+  hostilePlayers?: string[];
   /** The intent that resulted, if any. */
   intent?: { tactic: string; targetId?: number; reason: string };
   latencyMs?: number;

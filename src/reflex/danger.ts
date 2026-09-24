@@ -58,6 +58,18 @@ export const MOB_STATS: Record<string, MobStats> = {
 
 export const DEFAULT_MOB: MobStats = melee(20, 3);
 
+/** A player hits with whatever they hold, and lands about half their swings while dodging. */
+export function playerStats(held: string | null): MobStats {
+  const hitsPerSecond = 20 / cooldownTicks(held);
+  return {
+    hp: 20,
+    dps: weaponDamage(held) * hitsPerSecond * 0.5,
+    burst: 0,
+    speed: 5,
+    engagement: 0.6,
+  };
+}
+
 /**
  * Mobs the game classes as hostile that leave you alone until provoked. Attacking them starts a
  * fight the bot does not need (an enderman has 40 HP and hits for 7).
@@ -142,7 +154,7 @@ export function estimateFight(threats: EntitySummary[], gear: Gear): FightEstima
   let t = 0;
   let damage = 0;
   for (const threat of [...threats].sort((a, b) => a.dist - b.dist)) {
-    const stats = mobStats(threat.kind);
+    const stats = threat.category === 'player' ? playerStats(threat.held) : mobStats(threat.kind);
     const killSeconds = stats.hp / myDps;
     t += killSeconds;
     const arrival = stats.speed > 0 ? threat.dist / stats.speed : 0;

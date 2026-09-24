@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   HIT_EFFICIENCY,
+  playerStats,
   armorPoints,
   armorReduction,
   estimateFight,
@@ -158,5 +159,29 @@ describe('estimateFight', () => {
       expect(got).toBeGreaterThan(saw / 2);
       expect(got).toBeLessThan(saw * 2);
     }
+  });
+});
+
+describe('players as opponents', () => {
+  it('hit harder the better their weapon, and are never harmless', () => {
+    expect(playerStats('diamond_sword').dps).toBeGreaterThan(playerStats('wooden_sword').dps);
+    expect(playerStats('wooden_sword').dps).toBeGreaterThan(playerStats(null).dps);
+    expect(playerStats(null).dps).toBeGreaterThan(0);
+  });
+
+  it('have 20 HP and close in quickly', () => {
+    expect(playerStats('iron_sword')).toMatchObject({ hp: 20, speed: 5 });
+  });
+
+  it('are estimated from the item they hold, not from their name', () => {
+    const armed = estimateFight(
+      [mob(1, 5, { category: 'player', kind: 'Zombie', held: 'diamond_sword' })],
+      { armor: IRON_ARMOR, weapon: 'iron_sword' },
+    );
+    const bare = estimateFight([mob(1, 5, { category: 'player', kind: 'Zombie', held: null })], {
+      armor: IRON_ARMOR,
+      weapon: 'iron_sword',
+    });
+    expect(armed.expectedDamage).toBeGreaterThan(bare.expectedDamage);
   });
 });

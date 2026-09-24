@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { Intent } from '../src/intent.js';
 import { decideByRules } from '../src/reflex/rules.js';
-import { IGNORE_MIN_DISTANCE_BLOCKS, decideWithJev } from '../src/strategic/policy.js';
+import {
+  HOSTILE_PLAYER_CONFIDENCE,
+  HOSTILE_PLAYER_MAX_DISTANCE,
+  IGNORE_MIN_DISTANCE_BLOCKS,
+  decideWithJev,
+  judgeHostilePlayers,
+} from '../src/strategic/policy.js';
 import { BARE, mob, rules, snap } from './fixtures.js';
 import { judgment } from './jevFixtures.js';
 
@@ -184,5 +190,42 @@ describe('decideWithJev with retreating off (the shipped default)', () => {
     expect(
       decideOff(judgment({ tactic: 'ignore', tacticConfidence: 0.9 }), far).intent.tactic,
     ).toBe('idle');
+  });
+});
+
+describe('judgeHostilePlayers', () => {
+  const stranger = (over = {}) =>
+    mob(11, 5, { category: 'player', kind: 'Stranger', held: 'iron_sword', ...over });
+  const judge = (hostile: number, entities = [stranger()], r = rules) =>
+    judgeHostilePlayers(judgment({ players: [{ id: 11, hostile }] }), snap(20, entities), r);
+
+  it('marks an armed, close player when Jev is very sure', () => {
+    expect(judge(HOSTILE_PLAYER_CONFIDENCE)).toEqual(['Stranger']);
+  });
+
+  it('needs high confidence', () => {
+    expect(judge(HOSTILE_PLAYER_CONFIDENCE - 0.01)).toEqual([]);
+  });
+
+  it('needs the player to be armed', () => {
+    expect(judge(0.99, [stranger({ held: null })])).toEqual([]);
+  });
+
+  it('needs the player to be close', () => {
+    expect(judge(0.99, [stranger({ dist: HOSTILE_PLAYER_MAX_DISTANCE + 1 })])).toEqual([]);
+    expect(judge(0.99, [stranger({ dist: HOSTILE_PLAYER_MAX_DISTANCE })])).toEqual(['Stranger']);
+  });
+
+  it('never marks a protected player', () => {
+    expect(judge(0.99, [stranger()], { ...rules, protectedPlayers: ['stranger'] })).toEqual([]);
+  });
+
+  it('marks nobody when pvp is off', () => {
+    expect(judge(0.99, [stranger()], { ...rules, pvp: false })).toEqual([]);
+  });
+
+  it('ignores answers about players who are no longer there, or are not players', () => {
+    expect(judge(0.99, [])).toEqual([]);
+    expect(judge(0.99, [mob(11, 5)])).toEqual([]);
   });
 });

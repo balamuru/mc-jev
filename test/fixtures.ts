@@ -6,6 +6,8 @@ import type { RuleSettings } from '../src/reflex/rules.js';
  * Retreating is switched on here (the shipped default is off) because most tests exercise it.
  */
 export const rules: RuleSettings = {
+  pvp: true,
+  protectedPlayers: [],
   retreat: true,
   retreatHp: 6,
   resumeHp: 14,

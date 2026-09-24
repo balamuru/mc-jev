@@ -1,10 +1,12 @@
 import { createBot } from 'mineflayer';
-import type { BotConfig, Config } from '../config.js';
+import { protectedFor, type BotConfig, type Config } from '../config.js';
 import { isAuthorized, parseChat } from '../control/commands.js';
 import { ModeController, type Mode } from '../control/modes.js';
 import { IDLE, type Intent } from '../intent.js';
 import type { Logger } from '../logger.js';
-import type { Snapshot } from '../perception/types.js';
+import { ProvocationTracker } from '../perception/provocation.js';
+import { distance } from '../perception/geometry.js';
+import type { Snapshot, Vec3Like } from '../perception/types.js';
 import { ReflexLoop, type Actuator } from '../reflex/loop.js';
 import { GAME_TICK_MS } from '../config.js';
 import type { JevGateway } from '../strategic/gateway.js';
@@ -55,7 +57,10 @@ export function createMineflayerBot(server: Config['server'], config: BotConfig)
   if (config.reflex.enabled) {
     bot.once('spawn', () => attachPlugins(bot, config.rules));
   }
-  return { bot: bot as unknown as BotLike, actuator: new MineflayerActuator(bot) };
+  return {
+    bot: bot as unknown as BotLike,
+    actuator: new MineflayerActuator(bot, protectedFor(config)),
+  };
 }
 
 /**
@@ -68,6 +73,7 @@ export class BotAgent {
   private reflex: ReflexLoop | null = null;
   private strategic: StrategicLayer | null = null;
   private modes: ModeController | null = null;
+  private readonly provocation = new ProvocationTracker();
   private _deaths = 0;
   private attempt = 0;
   private reconnectTimer: NodeJS.Timeout | null = null;
@@ -134,7 +140,14 @@ export class BotAgent {
   /** Latest snapshot, or null when not spawned. */
   snapshot(): Snapshot | null {
     if (!this.bot || this._state !== 'online') return null;
-    return readSnapshot(this.bot, this.config.perception, Date.now(), this.config.owner);
+    const now = Date.now();
+    return readSnapshot(
+      this.bot,
+      this.config.perception,
+      now,
+      this.config.owner,
+      this.provocation.hostileNames(now),
+    );
   }
 
   private connect(): void {
@@ -180,10 +193,11 @@ export class BotAgent {
   private startReflex(bot: BotLike, actuator: Actuator): void {
     if (!this.config.reflex.enabled) return;
     const { gateway } = this.options;
+    const rules = { ...this.config.rules, protectedPlayers: protectedFor(this.config) };
     const modes = new ModeController({
       ownerName: this.config.owner,
       defaultMode: this.config.mode,
-      rules: this.config.rules,
+      rules,
       huntRadiusBlocks: this.config.perception.radiusBlocks,
     });
     this.modes = modes;
@@ -193,8 +207,12 @@ export class BotAgent {
             agentId: this.config.username,
             strategic: this.config.strategic,
             jev: this.config.jev,
-            rules: this.config.rules,
+            rules,
             gateway,
+            onHostilePlayers: (names, ttlMs) => {
+              for (const name of names) this.provocation.markHostile(name, Date.now(), ttlMs);
+              this.log.info(`Jev judged ${names.join(', ')} about to attack`);
+            },
             currentIntent: () => this.intent,
             active: () => !modes.standingDown,
             apply: (intent, ttlMs) => reflex.setOverride(intent, Math.ceil(ttlMs / GAME_TICK_MS)),
@@ -206,7 +224,7 @@ export class BotAgent {
 
     const reflex: ReflexLoop = new ReflexLoop({
       everyTicks: this.config.reflex.everyTicks,
-      rules: this.config.rules,
+      rules,
       read: () => {
         const snapshot = this.snapshot();
         if (snapshot) strategic?.observe(snapshot);
@@ -222,6 +240,7 @@ export class BotAgent {
     this.strategic = strategic;
     strategic?.start();
     bot.on('physicsTick', () => reflex.onTick());
+    this.watchForAttackers(bot);
     const onChat = (username: string, message: string) =>
       this.handleChat(bot, reflex, username, message);
     bot.on('chat', onChat);
@@ -230,6 +249,38 @@ export class BotAgent {
     bot.on('death', () => {
       reflex.dispose();
       strategic?.reset();
+      this.provocation.reset();
+    });
+  }
+
+  /**
+   * Notice players who attack the bot. The server names the attacker in `entityHurt` when it can;
+   * otherwise a swing near the bot at the moment its HP dropped, with no mob next to it, is used.
+   */
+  private watchForAttackers(bot: BotLike): void {
+    if (!this.config.rules.pvp) return;
+    // `bot.entity` does not exist until the bot has spawned, so read it when an event arrives.
+    let lastHealth = bot.health;
+    bot.on('entityHurt', (victim: unknown, source: unknown) => {
+      const attacker = source as { type?: string; username?: string } | undefined;
+      if (victim === (bot.entity as unknown) && attacker?.type === 'player' && attacker.username) {
+        this.provocation.noteHit(attacker.username, Date.now());
+      }
+    });
+    bot.on('entitySwingArm', (entity: unknown) => {
+      const e = entity as { type?: string; username?: string; position?: Vec3Like };
+      const me = bot.entity;
+      if (!me || e.type !== 'player' || !e.username || e === (me as unknown) || !e.position) return;
+      this.provocation.noteSwing(e.username, distance(me.position, e.position), Date.now());
+    });
+    bot.on('health', () => {
+      const drop = lastHealth - bot.health;
+      lastHealth = bot.health;
+      if (drop <= 0) return;
+      const mobNearby = (this.snapshot()?.entities ?? []).some(
+        (e) => e.category === 'hostile' && e.dist <= 4,
+      );
+      this.provocation.noteHpDrop({ amount: drop, mobNearby }, Date.now());
     });
   }
 
@@ -249,6 +300,7 @@ export class BotAgent {
 
   private stopReflex(): void {
     this.modes = null;
+    this.provocation.reset();
     this.strategic?.stop();
     this.strategic = null;
     this.reflex?.dispose();

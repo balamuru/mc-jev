@@ -32,6 +32,9 @@ describe('bots on a real server', () => {
 
   it('sees the other bot as a player entity', async () => {
     const other = agents[1]!.agent.config.username;
+    // Players spawn at random spots up to 10 blocks from the world spawn, which can put two of
+    // them beyond the 24-block perception radius. Stand them next to each other.
+    await server.run(`execute at ${a().config.username} run tp ${other} ~3 ~ ~`);
     const snap = await waitFor(
       () => {
         const s = a().snapshot();

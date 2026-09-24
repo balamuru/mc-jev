@@ -148,6 +148,45 @@ describe('decideByRules with retreating off (the shipped default)', () => {
   });
 });
 
+describe('decideByRules with players', () => {
+  const rival = (id: number, dist: number, over = {}) =>
+    mob(id, dist, { category: 'player', kind: 'Rival', provoked: true, ...over });
+
+  it('fights a player who attacked the bot', () => {
+    expect(decideByRules(snap(20, [rival(9, 4)]), rules)).toMatchObject({
+      tactic: 'engage',
+      targetId: 9,
+      reason: 'fighting Rival',
+    });
+  });
+
+  it('leaves alone a player who has not attacked it', () => {
+    expect(decideByRules(snap(20, [rival(9, 4, { provoked: false })]), rules)).toEqual(IDLE);
+    expect(decideByRules(snap(20, [rival(9, 4, { provoked: undefined })]), rules)).toEqual(IDLE);
+  });
+
+  it('never fights a protected player, however provoked', () => {
+    const guarded = { ...rules, protectedPlayers: ['rival'] };
+    expect(decideByRules(snap(20, [rival(9, 4)]), guarded)).toEqual(IDLE);
+    // ...and still fights a real hostile beside them.
+    expect(decideByRules(snap(20, [rival(9, 2), mob(1, 6)]), guarded).targetId).toBe(1);
+  });
+
+  it('never fights a player when pvp is off', () => {
+    expect(decideByRules(snap(20, [rival(9, 4)]), { ...rules, pvp: false })).toEqual(IDLE);
+  });
+
+  it('ignores a provoked player who is out of range or out of sight', () => {
+    expect(decideByRules(snap(20, [rival(9, 17)]), rules)).toEqual(IDLE);
+    expect(decideByRules(snap(20, [rival(9, 4, { visible: false })]), rules)).toEqual(IDLE);
+  });
+
+  it('picks the nearest threat, mob or player', () => {
+    expect(decideByRules(snap(20, [mob(1, 8), rival(9, 3)]), rules).targetId).toBe(9);
+    expect(decideByRules(snap(20, [mob(1, 3), rival(9, 8)]), rules).targetId).toBe(1);
+  });
+});
+
 describe('intentChanged', () => {
   it('compares tactic and target, not the reason', () => {
     const a: Intent = { tactic: 'engage', targetId: 1, reason: 'x' };

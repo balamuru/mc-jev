@@ -127,7 +127,7 @@ export class ReflexLoop {
     if (this.watch.update(this.ticks, threat.id, threat.dist) === 'ok') return next;
 
     // The retreat is not gaining ground. Turn and fight the nearest threat instead of running in place.
-    const fightBack = threatsIn(snapshot, rules.engageRadiusBlocks)[0];
+    const fightBack = threatsIn(snapshot, rules)[0];
     if (!fightBack || this.fightBackTicks === 0) return next;
     const intent: Intent = {
       tactic: 'engage',

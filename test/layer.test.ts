@@ -301,6 +301,63 @@ describe('StrategicLayer failures', () => {
   });
 });
 
+describe('StrategicLayer and hostile players', () => {
+  const stranger = mob(11, 5, {
+    category: 'player',
+    kind: 'Stranger',
+    held: 'iron_sword',
+    provoked: false,
+  });
+
+  it('asks about strangers and reports the ones Jev is sure about', async () => {
+    const hostile: Array<[string[], number]> = [];
+    const { layer, requests, entries } = setup(() => answers({ players: { 11: 0.95 } }), {
+      onHostilePlayers: (names, ttl) => void hostile.push([names, ttl]),
+    });
+    layer.observe(snap(20, [mob(1, 6), stranger]));
+    await flush();
+    expect(Object.keys(requests[0]!.questions)).toContain('hostile_p11');
+    expect(hostile).toEqual([[['Stranger'], 10_000]]);
+    expect(entries[0]).toMatchObject({ hostilePlayers: ['Stranger'] });
+  });
+
+  it('asks about a lone stranger even with no mob around, and only once until something changes', async () => {
+    const { layer, requests } = setup(() => answers({ players: { 11: 0.2 } }));
+    const s = snap(20, [stranger]);
+    layer.observe(s);
+    await flush();
+    expect(requests).toHaveLength(1);
+    layer.observe(s);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(requests).toHaveLength(1); // the same stranger is not new
+  });
+
+  it('does not report a stranger Jev is unsure about', async () => {
+    const hostile: string[][] = [];
+    const { layer, entries } = setup(() => answers({ players: { 11: 0.5 } }), {
+      onHostilePlayers: (names) => void hostile.push(names),
+    });
+    layer.observe(snap(20, [mob(1, 6), stranger]));
+    await flush();
+    expect(hostile).toEqual([]);
+    expect(entries[0]).not.toHaveProperty('hostilePlayers');
+  });
+
+  it('asks nothing about players when pvp is off', async () => {
+    const { layer, requests } = setup(undefined, { rules: { ...rules, pvp: false } });
+    layer.observe(snap(20, [mob(1, 6), stranger]));
+    await flush();
+    expect(Object.keys(requests[0]!.questions)).not.toContain('hostile_p11');
+  });
+
+  it('asks about a player who attacked the bot, as a threat', async () => {
+    const { layer, requests } = setup();
+    layer.observe(snap(20, [{ ...stranger, provoked: true }]));
+    await flush();
+    expect(requests).toHaveLength(1); // a provoked player alone is reason enough to decide
+  });
+});
+
 describe('StrategicLayer when held off', () => {
   it('asks nothing while inactive, and treats the threats as new when it resumes', async () => {
     const state = { active: false };

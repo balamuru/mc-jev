@@ -98,7 +98,8 @@ describe('chat commands on a real server', () => {
 
   it('follows the owner across the map', async () => {
     dump();
-    await server.run(`execute at ${ownerName} run tp ${ownerName} ~18 ~ ~`);
+    // Exactly 18 blocks east of the bot: players spawn at random spots, so a relative teleport of the owner alone proves nothing.
+    await server.run(`execute at ${agentName} run tp ${ownerName} ~18 ~ ~`);
     await waitFor(() => ownerDistance() > 14, 10_000, 'the owner to be far away');
     say(owner, 'follow me');
     await waitFor(() => agent().mode.name === 'follow', 10_000, 'follow mode');

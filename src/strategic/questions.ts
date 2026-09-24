@@ -1,5 +1,6 @@
 import type { EntryType, Questions } from '@typesafe-ai/sdk';
-import type { Snapshot } from '../perception/types.js';
+import type { EntitySummary, Snapshot } from '../perception/types.js';
+import { isProtectedPlayer } from '../reflex/protect.js';
 import { NEUTRAL_MOBS, armorPoints } from '../reflex/danger.js';
 import type { JevAnswer } from './jev.js';
 
@@ -15,15 +16,60 @@ export type JevTactic = (typeof TACTICS)[number];
 export const NO_TARGET = 'none';
 const targetLabel = (id: number) => `t${id}`;
 
-/** The hostiles worth describing to Jev, nearest first. */
-export function relevantThreats(snapshot: Snapshot, radiusBlocks: number) {
+/** At most this many other players are described to Jev, and asked about. */
+export const MAX_PLAYERS_IN_STATE = 3;
+
+/** What the strategic layer needs to know about players. */
+export interface PlayerRules {
+  pvp: boolean;
+  protectedPlayers?: string[];
+}
+
+const playerLabel = (id: number) => `p${id}`;
+
+/** The hostiles worth describing to Jev, nearest first: mobs, and players who have attacked the bot. */
+export function relevantThreats(snapshot: Snapshot, radiusBlocks: number, rules?: PlayerRules) {
   return snapshot.entities
-    .filter((e) => e.category === 'hostile' && e.dist <= radiusBlocks)
+    .filter((e) => {
+      if (e.dist > radiusBlocks) return false;
+      if (e.category === 'hostile') return true;
+      return (
+        e.category === 'player' &&
+        !!rules?.pvp &&
+        !!e.provoked &&
+        !isProtectedPlayer(e.kind, rules.protectedPlayers)
+      );
+    })
     .slice(0, MAX_THREATS_IN_STATE);
 }
 
+/**
+ * Other players in view whose intentions are unknown: not protected, not already known to be
+ * hostile. Jev is asked whether each is about to attack.
+ */
+export function playersToJudge(
+  snapshot: Snapshot,
+  radiusBlocks: number,
+  rules?: PlayerRules,
+): EntitySummary[] {
+  if (!rules?.pvp) return [];
+  return snapshot.entities
+    .filter(
+      (e) =>
+        e.category === 'player' &&
+        !e.provoked &&
+        e.dist <= radiusBlocks &&
+        !isProtectedPlayer(e.kind, rules.protectedPlayers),
+    )
+    .slice(0, MAX_PLAYERS_IN_STATE);
+}
+
 /** The bot's situation as plain named fields, the way Jev wants state. */
-export function buildState(snapshot: Snapshot, radiusBlocks: number): EntryType {
+export function buildState(
+  snapshot: Snapshot,
+  radiusBlocks: number,
+  rules?: PlayerRules,
+): EntryType {
   const { self } = snapshot;
   return {
     self: {
@@ -34,7 +80,15 @@ export function buildState(snapshot: Snapshot, radiusBlocks: number): EntryType 
       armor_points: armorPoints(self.armor),
       in_water: self.inWater,
     },
-    threats: relevantThreats(snapshot, radiusBlocks).map((e) => ({
+    players: playersToJudge(snapshot, radiusBlocks, rules).map((e) => ({
+      id: playerLabel(e.id),
+      name: e.kind,
+      distance_blocks: e.dist,
+      direction: e.bearing,
+      approaching: e.approaching,
+      holding: e.held,
+    })),
+    threats: relevantThreats(snapshot, radiusBlocks, rules).map((e) => ({
       id: targetLabel(e.id),
       kind: e.kind,
       distance_blocks: e.dist,
@@ -49,15 +103,29 @@ export function buildState(snapshot: Snapshot, radiusBlocks: number): EntryType 
 }
 
 /** The four questions asked together in one request (they are answered in parallel). */
-export function buildQuestions(snapshot: Snapshot, radiusBlocks: number): Questions {
-  const threats = relevantThreats(snapshot, radiusBlocks);
+export function buildQuestions(
+  snapshot: Snapshot,
+  radiusBlocks: number,
+  rules?: PlayerRules,
+): Questions {
+  const threats = relevantThreats(snapshot, radiusBlocks, rules);
   const targets: Record<string, string> = {
     [NO_TARGET]: 'No threat is worth attacking right now.',
   };
   for (const e of threats) {
     targets[targetLabel(e.id)] = `${e.kind}, ${e.dist} blocks ${e.bearing}`;
   }
+  const hostility: Questions = {};
+  for (const p of playersToJudge(snapshot, radiusBlocks, rules)) {
+    hostility[`hostile_${playerLabel(p.id)}`] = {
+      type: 'noul',
+      instructions:
+        `Is the player ${playerLabel(p.id)} listed in \`players\` about to attack the fighter (\`self\`)? ` +
+        'A player who is just passing by, or holding a tool rather than a weapon, is not.',
+    };
+  }
   return {
+    ...hostility,
     tactic: {
       type: 'choice',
       instructions:
@@ -94,6 +162,12 @@ export function buildQuestions(snapshot: Snapshot, radiusBlocks: number): Questi
   };
 }
 
+/** Jev's estimate, per nearby player, of the probability that they are about to attack. */
+export interface PlayerJudgment {
+  id: number;
+  hostile: number;
+}
+
 export interface Judgment {
   tactic: { label: JevTactic; confidence: number };
   /** Entity id Jev picked, or null for "none". */
@@ -101,6 +175,8 @@ export interface Judgment {
   threatLevel: { score: number; confidence: number };
   /** Probability of an ambush, 0 to 1. */
   ambush: number;
+  /** Players Jev was asked about. */
+  players: PlayerJudgment[];
 }
 
 /** Read and check Jev's answers. Returns null if anything is missing or not what was asked. */
@@ -131,5 +207,16 @@ export function parseJudgment(answers: Record<string, JevAnswer>): Judgment | nu
     target: { id: targetId, confidence: target.confidence },
     threatLevel: { score: level.score, confidence: level.confidence },
     ambush: ambush.noul,
+    players: parsePlayerAnswers(answers),
   };
+}
+
+function parsePlayerAnswers(answers: Record<string, JevAnswer>): PlayerJudgment[] {
+  const out: PlayerJudgment[] = [];
+  for (const [key, answer] of Object.entries(answers)) {
+    const match = /^hostile_p(\d+)$/.exec(key);
+    if (!match || answer.type !== 'noul' || !Number.isFinite(answer.noul)) continue;
+    out.push({ id: Number(match[1]), hostile: answer.noul });
+  }
+  return out;
 }

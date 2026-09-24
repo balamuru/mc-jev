@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { JevAnswer } from '../src/strategic/jev.js';
 import {
+  MAX_PLAYERS_IN_STATE,
   MAX_THREATS_IN_STATE,
   NO_TARGET,
   QUESTION_SET_VERSION,
@@ -10,6 +11,7 @@ import {
   relevantThreats,
 } from '../src/strategic/questions.js';
 import { mob, snap } from './fixtures.js';
+import { answers } from './jevFixtures.js';
 
 describe('buildState', () => {
   const state = buildState(
@@ -158,6 +160,7 @@ describe('parseJudgment', () => {
       target: { id: 5, confidence: 0.7 },
       threatLevel: { score: 1.4, confidence: 0.6 },
       ambush: 0.2,
+      players: [],
     });
   });
 
@@ -181,5 +184,65 @@ describe('parseJudgment', () => {
     const a = good();
     damage(a as unknown as Loose);
     expect(parseJudgment(a)).toBeNull();
+  });
+});
+
+describe('players in the state and questions', () => {
+  const playerRules = { pvp: true, protectedPlayers: ['Boss'] };
+  const player = (id: number, name: string, dist: number, over = {}) =>
+    mob(id, dist, { category: 'player', kind: name, held: 'iron_sword', provoked: false, ...over });
+  const s = snap(20, [
+    player(11, 'Stranger', 6, { approaching: true }),
+    player(12, 'Boss', 4),
+    player(13, 'Rival', 5, { provoked: true }),
+    mob(1, 9),
+  ]);
+  const state = buildState(s, 16, playerRules) as {
+    players: Array<Record<string, unknown>>;
+    threats: Array<Record<string, unknown>>;
+  };
+
+  it('describes strangers to Jev, but not protected or already-hostile players', () => {
+    expect(state.players).toEqual([
+      {
+        id: 'p11',
+        name: 'Stranger',
+        distance_blocks: 6,
+        direction: 'ahead',
+        approaching: true,
+        holding: 'iron_sword',
+      },
+    ]);
+  });
+
+  it('counts a player who attacked the bot as a threat, and never a protected one', () => {
+    expect(state.threats.map((t) => t.id)).toEqual(['t13', 't1']); // nearest first
+  });
+
+  it('asks one hostility question per stranger, and none when pvp is off', () => {
+    const q = buildQuestions(s, 16, playerRules);
+    expect(Object.keys(q)).toContain('hostile_p11');
+    expect(Object.keys(q)).not.toContain('hostile_p12');
+    expect(Object.keys(q)).not.toContain('hostile_p13');
+    expect(q.hostile_p11).toMatchObject({ type: 'noul' });
+    const off = buildQuestions(s, 16, { pvp: false });
+    expect(Object.keys(off)).toEqual(['tactic', 'target', 'threat_level', 'ambush']);
+    expect((buildState(s, 16, { pvp: false }) as { players: unknown[] }).players).toEqual([]);
+  });
+
+  it('describes at most a few strangers', () => {
+    const crowd = Array.from({ length: 8 }, (_, i) => player(20 + i, `P${i}`, 3 + i));
+    const st = buildState(snap(20, crowd), 30, playerRules) as { players: unknown[] };
+    expect(st.players).toHaveLength(MAX_PLAYERS_IN_STATE);
+  });
+
+  it('reads the hostility answers, ignoring malformed ones', () => {
+    const a = {
+      ...answers({ players: { 11: 0.9 } }),
+      hostile_pabc: { type: 'noul', noul: 0.9 },
+      hostile_p12: { type: 'choice', choice: 'x', confidence: 1, probabilities: {} },
+      hostile_p13: { type: 'noul', noul: Number.NaN },
+    } as unknown as Record<string, JevAnswer>;
+    expect(parseJudgment(a)?.players).toEqual([{ id: 11, hostile: 0.9 }]);
   });
 });

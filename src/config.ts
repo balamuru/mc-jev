@@ -13,6 +13,8 @@ const reflexSchema = z.object({
 
 /** Deterministic combat and survival rules. They are also the fallback when Jev is unavailable. */
 const rulesBaseSchema = z.object({
+  /** Fight back against players who attack the bot (or that Jev judges to be a threat). Off: never fight players. */
+  pvp: z.boolean(),
   /**
    * Allow retreating at all. Off by default: with no safe place to run to, the survival benchmark
    * shows a bot that fights on survives more often than one that flees (docs/survival-benchmark.md).
@@ -112,6 +114,8 @@ const botEntrySchema = z.object({
   username: z.string().regex(/^\w{3,16}$/, 'Minecraft usernames are 3-16 letters, digits or _'),
   role: z.enum(['fighter', 'tank', 'ranged', 'support', 'scout']).default('fighter'),
   owner: z.string().optional(),
+  /** Players this bot must never attack, in addition to its owner and the other bots. */
+  allies: z.array(z.string()).default([]),
   /** What the bot does on its own until its owner gives an order: hold and fight what comes (guard), seek out hostiles (hunt), or do nothing (idle). */
   mode: z.enum(['guard', 'hunt', 'idle']).default('guard'),
   /** Per-bot overrides of `defaults`. */
@@ -145,6 +149,8 @@ export interface BotConfig extends AgentSettings {
   username: string;
   role: ConfigFile['bots'][number]['role'];
   owner?: string;
+  /** Everyone this bot must never attack: its owner, its allies, and every bot in the config. */
+  protectedPlayers: string[];
   mode: ConfigFile['bots'][number]['mode'];
 }
 
@@ -154,6 +160,14 @@ export interface Config {
   debug: ConfigFile['debug'];
   bots: BotConfig[];
   jevApi: { apiKey?: string; baseURL?: string };
+}
+
+/**
+ * Everyone a bot must never attack. The owner is always included, even if `protectedPlayers` was
+ * built without them, so protecting the owner never depends on how the config was assembled.
+ */
+export function protectedFor(config: Pick<BotConfig, 'owner' | 'protectedPlayers'>): string[] {
+  return [...new Set([...(config.owner ? [config.owner] : []), ...config.protectedPlayers])];
 }
 
 /** Parse raw config + environment into a validated config with per-bot settings resolved. */
@@ -174,6 +188,7 @@ export function parseConfig(raw: unknown, env: NodeJS.ProcessEnv = {}): Config {
     port: env.MC_PORT ? Number(env.MC_PORT) : file.server.port,
   };
 
+  const swarm = file.bots.map((b) => b.username);
   const bots = file.bots.map((entry): BotConfig => {
     const o = entry.overrides;
     const settings = agentSettingsSchema.parse({
@@ -187,10 +202,19 @@ export function parseConfig(raw: unknown, env: NodeJS.ProcessEnv = {}): Config {
         thresholds: { ...file.defaults.jev.thresholds, ...o.jev?.thresholds },
       },
     });
+    const protectedPlayers = [
+      ...new Map(
+        [...(entry.owner ? [entry.owner] : []), ...entry.allies, ...swarm].map((n) => [
+          n.toLowerCase(),
+          n,
+        ]),
+      ).values(),
+    ];
     return {
       username: entry.username,
       role: entry.role,
       owner: entry.owner,
+      protectedPlayers,
       mode: entry.mode,
       ...settings,
     };

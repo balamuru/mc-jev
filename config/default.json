@@ -24,6 +24,7 @@
       "everyTicks": 1
     },
     "rules": {
+      "pvp": true,
       "retreat": false,
       "retreatHp": 6,
       "resumeHp": 14,

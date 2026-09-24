@@ -1,6 +1,7 @@
 import type { Intent } from '../intent.js';
 import { IDLE } from '../intent.js';
 import type { Snapshot } from '../perception/types.js';
+import { isProtectedPlayer } from '../reflex/protect.js';
 import { threatsIn, type RuleSettings } from '../reflex/rules.js';
 import type { Judgment } from './questions.js';
 
@@ -44,7 +45,7 @@ export function decideWithJev(
   thresholds: Thresholds,
 ): Decision {
   const fromRules = (why: string): Decision => ({ intent: rulesIntent, source: 'rules', why });
-  const threats = threatsIn(snapshot, rules.engageRadiusBlocks);
+  const threats = threatsIn(snapshot, rules);
   const nearest = threats[0];
   if (!nearest) return fromRules('no threats to decide about');
 
@@ -113,7 +114,7 @@ function engage(
   thresholds: Thresholds,
   why: string,
 ): Decision {
-  const threats = threatsIn(snapshot, rules.engageRadiusBlocks);
+  const threats = threatsIn(snapshot, rules);
   // Use Jev's pick of target only when it is confident and still a valid threat.
   const chosen =
     judgment.target.id !== null && judgment.target.confidence >= thresholds.cautious
@@ -133,4 +134,31 @@ function engage(
 
 function describe(j: Judgment): string {
   return `${j.tactic.label} ${(j.tactic.confidence * 100).toFixed(0)}%, threat ${j.threatLevel.score.toFixed(1)}/3`;
+}
+
+/** Jev must be at least this sure a player is about to attack before the bot treats them as hostile. */
+export const HOSTILE_PLAYER_CONFIDENCE = 0.85;
+/** ...and the player must be within this many blocks. */
+export const HOSTILE_PLAYER_MAX_DISTANCE = 8;
+
+/**
+ * Which players Jev's judgment says to treat as hostile. This is the riskiest thing Jev can do
+ * (a wrong answer makes the bot attack a bystander), so it is strict: Jev must be very sure, the
+ * player must be armed and close, and protected players are never included.
+ */
+export function judgeHostilePlayers(
+  judgment: Judgment,
+  snapshot: Snapshot,
+  rules: Pick<RuleSettings, 'pvp' | 'protectedPlayers'>,
+): string[] {
+  if (!rules.pvp) return [];
+  const names: string[] = [];
+  for (const { id, hostile } of judgment.players) {
+    if (hostile < HOSTILE_PLAYER_CONFIDENCE) continue;
+    const player = snapshot.entities.find((e) => e.id === id && e.category === 'player');
+    if (!player || !player.held || player.dist > HOSTILE_PLAYER_MAX_DISTANCE) continue;
+    if (isProtectedPlayer(player.kind, rules.protectedPlayers)) continue;
+    names.push(player.kind);
+  }
+  return names;
 }

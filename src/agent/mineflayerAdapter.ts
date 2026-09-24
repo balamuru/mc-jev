@@ -47,6 +47,7 @@ export function readSnapshot(
   options: Partial<PerceptionOptions> = {},
   now: number = Date.now(),
   ownerName?: string,
+  hostilePlayers?: ReadonlySet<string>,
 ): Snapshot {
   const self = bot.entity;
   return buildSnapshot(
@@ -66,6 +67,7 @@ export function readSnapshot(
       // Exclude the bot itself; the snapshot already describes it.
       entities: Object.values(bot.entities).filter((e) => e !== (self as unknown)),
       owner: ownerName ? findPlayer(bot, ownerName) : null,
+      hostilePlayers,
       hasLineOfSight: (from, to) => {
         const origin = new Vec3(from.x, from.y, from.z);
         const delta = new Vec3(to.x - from.x, to.y - from.y, to.z - from.z);

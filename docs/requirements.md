@@ -64,8 +64,11 @@ Jev's judgment is merged with the rules by a confidence-gated policy (see [archi
 
 ### FR-7 Player combat
 
-- The bot never attacks its `owner` or players on the allowlist.
-- It uses player-vs-player tactics.
+- **Only in self-defence, by default.** A bot fights a player only if the player has attacked it (the server names the attacker, or a swing near the bot matched a drop in its HP with no mob beside it), or Jev is very sure the player is about to attack (see below).
+- **Never the owner, allies or other bots.** A bot's owner, its `allies` and every other bot in the config are protected. This is enforced in code in three places (the rules, Jev's target list, and the actuator itself), so no judgment by Jev and no chain of events can make a bot attack them.
+- **Jev judges strangers.** For up to three unfamiliar players in view, Jev is asked whether each is about to attack. A player is treated as hostile only if Jev is at least 85% sure, they hold a weapon, and they are within 8 blocks. A hostile marking lasts 10 seconds without further evidence. An attacker stays hostile for 20 seconds after their last hit.
+- **Tactics against players.** The bot jumps so that hits land as critical hits, does not sprint while in reach (sprinting cancels critical hits), and side-steps back and forth while close.
+- **Switch.** `rules.pvp: false` means the bot never fights players, whatever they do.
 
 ### FR-8 Observability
 

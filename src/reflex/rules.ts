@@ -1,8 +1,13 @@
 import { IDLE, type Intent } from '../intent.js';
 import type { EntitySummary, Snapshot } from '../perception/types.js';
 import { NEUTRAL_MOBS, estimateFight, weaponFromInventory } from './danger.js';
+import { isProtectedPlayer } from './protect.js';
 
 export interface RuleSettings {
+  /** Fight back against players who attacked the bot. */
+  pvp: boolean;
+  /** Players never to attack: owner, allies, other bots. */
+  protectedPlayers?: string[];
   retreat: boolean;
   retreatHp: number;
   resumeHp: number;
@@ -24,15 +29,23 @@ export const SAFE_FIGHT_FRACTION = 0.3;
 /** While retreating, the fight must look this much safer than the entry margin before the bot returns. */
 export const RESUME_MARGIN_FACTOR = 0.8;
 
-/** Hostiles the bot should deal with: visible, in range, and not neutral until provoked. */
-export function threatsIn(snapshot: Snapshot, engageRadiusBlocks: number): EntitySummary[] {
-  return snapshot.entities.filter(
-    (e) =>
-      e.category === 'hostile' &&
-      e.visible &&
-      e.dist <= engageRadiusBlocks &&
-      !NEUTRAL_MOBS.has(e.kind),
-  );
+/**
+ * What the bot should deal with: hostile mobs (not the neutral ones), and, when `rules.pvp` is on,
+ * players who have attacked it or been judged a threat. Always visible and in range. Players in
+ * `protectedPlayers` (the owner, allies, other bots) are never threats, whatever else is true.
+ */
+export function threatsIn(
+  snapshot: Snapshot,
+  rules: Pick<RuleSettings, 'pvp' | 'protectedPlayers'> & { engageRadiusBlocks: number },
+): EntitySummary[] {
+  return snapshot.entities.filter((e) => {
+    if (!e.visible || e.dist > rules.engageRadiusBlocks) return false;
+    if (e.category === 'hostile') return !NEUTRAL_MOBS.has(e.kind);
+    if (e.category === 'player') {
+      return rules.pvp && !!e.provoked && !isProtectedPlayer(e.kind, rules.protectedPlayers);
+    }
+    return false;
+  });
 }
 
 /**
@@ -52,7 +65,7 @@ export function decideByRules(
   rules: RuleSettings,
   previous: Intent = IDLE,
 ): Intent {
-  const threats = threatsIn(snapshot, rules.engageRadiusBlocks);
+  const threats = threatsIn(snapshot, rules);
   const nearest = threats[0]; // snapshot entities are sorted nearest first
   if (!nearest) return IDLE;
 

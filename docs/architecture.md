@@ -107,6 +107,19 @@ A bot starts in its configured default mode and returns to it on `auto`. Orders 
 
 **Who decides.** Each reflex step, the highest of these wins: a fight-back after a failed retreat, then Jev's override, then the current mode (which uses the rules). While standing down the strategic layer is held off, and it treats whatever is around as new when the bot resumes.
 
+### Player combat
+
+Players are never threats just for being there. A player becomes a threat when:
+
+1. **They attacked the bot.** `ProvocationTracker` (`src/perception/provocation.ts`) listens for `entityHurt`, which names the attacker, and falls back to matching a nearby player's arm swing to a drop in the bot's HP (ignoring drops when a hostile mob is within 4 blocks). An attacker stays hostile for 20 seconds after their last hit.
+2. **Jev is very sure they are about to attack.** The strategic layer asks one yes/no question for each of up to three unfamiliar players in view. A player is marked hostile for 10 seconds only if Jev says at least 85%, they hold a weapon and they are within 8 blocks. A wrong answer here makes the bot attack a bystander, so this is the strictest threshold in the system.
+
+Both routes set a `provoked` flag on the player in the snapshot, and from there the normal rules apply: the player is a threat like a mob.
+
+**The owner, allies and other bots are never attacked.** `isProtectedPlayer` is checked in the rules (`threatsIn`), when building the targets Jev may choose from, and again in the actuator before it ever engages or swings, so even a mistake in one layer cannot lead to an attack. The owner is added to the protected set wherever it is used, so it does not depend on how the config was assembled. `rules.pvp: false` turns off all fighting against players.
+
+Against a player, the actuator (`src/agent/actuator.ts` with the timing in `src/reflex/pvp.ts`) jumps so the hit lands as a critical hit, stops sprinting while in reach (sprinting cancels critical hits), and strafes so the player has a harder time landing hits.
+
 ### Timing rules
 
 These rules keep the bot from stalling while it waits for Jev:

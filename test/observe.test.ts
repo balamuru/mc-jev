@@ -185,3 +185,28 @@ describe('buildSnapshot owner', () => {
     expect(buildSnapshot(input([], { owner: null })).owner).toBeNull();
   });
 });
+
+describe('buildSnapshot provoked players', () => {
+  const rival = () => entity({ type: 'player', name: undefined, username: 'Rival', x: 4, z: 0 });
+
+  it('flags players who are on the hostile list, matching names in any case', () => {
+    const p = rival();
+    const [e] = buildSnapshot(input([p], { hostilePlayers: new Set(['rival']) })).entities;
+    expect(e).toMatchObject({ kind: 'Rival', category: 'player', provoked: true });
+  });
+
+  it('marks other players as not provoked', () => {
+    const [e] = buildSnapshot(
+      input([rival()], { hostilePlayers: new Set(['someone else']) }),
+    ).entities;
+    expect(e?.provoked).toBe(false);
+    expect(buildSnapshot(input([rival()])).entities[0]?.provoked).toBe(false);
+  });
+
+  it('does not put the flag on mobs', () => {
+    const [z] = buildSnapshot(
+      input([entity({ z: -5 })], { hostilePlayers: new Set(['zombie']) }),
+    ).entities;
+    expect(z).not.toHaveProperty('provoked');
+  });
+});

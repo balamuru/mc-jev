@@ -11,6 +11,8 @@ export interface AnswerSpec {
   threatLevel?: number;
   threatConfidence?: number;
   ambush?: number;
+  /** Probability that each player (by entity id) is about to attack. */
+  players?: Record<number, number>;
 }
 
 /** Jev answers in the shape the SDK returns them. */
@@ -36,6 +38,12 @@ export function answers(spec: AnswerSpec = {}): Record<string, JevAnswer> {
       probabilities: {},
     } as unknown as JevAnswer,
     ambush: { type: 'noul', noul: spec.ambush ?? 0.1 },
+    ...Object.fromEntries(
+      Object.entries(spec.players ?? {}).map(([id, p]) => [
+        `hostile_p${id}`,
+        { type: 'noul', noul: p } as JevAnswer,
+      ]),
+    ),
   };
 }
 
@@ -49,6 +57,7 @@ export function judgment(
     threatLevel?: number;
     threatConfidence?: number;
     ambush?: number;
+    players?: Array<{ id: number; hostile: number }>;
   } = {},
 ): Judgment {
   return {
@@ -56,6 +65,7 @@ export function judgment(
     target: { id: spec.targetId ?? null, confidence: spec.targetConfidence ?? 0.9 },
     threatLevel: { score: spec.threatLevel ?? 1, confidence: spec.threatConfidence ?? 0.9 },
     ambush: spec.ambush ?? 0.1,
+    players: spec.players ?? [],
   };
 }
 

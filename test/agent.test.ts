@@ -573,3 +573,202 @@ describe('BotAgent chat commands', () => {
     expect(() => bots[0]!.emit('chat', 'Boss', 'follow')).not.toThrow();
   });
 });
+
+describe('BotAgent player combat', () => {
+  const rival = (id = 50, name = 'Rival', z = -3) => ({
+    id,
+    type: 'player',
+    username: name,
+    position: { x: 0, y: 64, z },
+    velocity: { x: 0, y: 0, z: 0 },
+    heldItem: { name: 'iron_sword', count: 1 },
+  });
+
+  function online(cfg: typeof botConfig = botConfig) {
+    const s = setup({}, cfg);
+    s.agent.start();
+    s.bots[0]!.equipIron().emit('spawn');
+    return s;
+  }
+
+  it('leaves a player alone until they attack it', () => {
+    const { agent, bots } = online();
+    bots[0]!.entities['50'] = rival();
+    bots[0]!.emit('physicsTick');
+    expect(agent.intent.tactic).toBe('idle');
+  });
+
+  it('fights back against a player the server names as its attacker', () => {
+    const { agent, bots, actuators } = online();
+    bots[0]!.entities['50'] = rival();
+    bots[0]!.emit('entityHurt', bots[0]!.entity, bots[0]!.entities['50']);
+    bots[0]!.emit('physicsTick');
+    expect(agent.intent).toMatchObject({
+      tactic: 'engage',
+      targetId: 50,
+      reason: 'fighting Rival',
+    });
+    expect(actuators[0]!.calls).toEqual(['engage 50']);
+  });
+
+  it('works out the attacker from a swing at the moment its HP dropped', () => {
+    const { agent, bots } = online();
+    bots[0]!.entities['50'] = rival();
+    bots[0]!.emit('entitySwingArm', bots[0]!.entities['50']);
+    bots[0]!.health = 16;
+    bots[0]!.emit('health');
+    bots[0]!.emit('physicsTick');
+    expect(agent.intent).toMatchObject({ tactic: 'engage', targetId: 50 });
+  });
+
+  it('does not blame a player who merely swung while a mob was hurting the bot', () => {
+    const { agent, bots } = online();
+    bots[0]!.entities['50'] = rival();
+    bots[0]!.entities['5'] = zombieAt(5, -2);
+    bots[0]!.emit('entitySwingArm', bots[0]!.entities['50']);
+    bots[0]!.health = 16;
+    bots[0]!.emit('health');
+    bots[0]!.emit('physicsTick');
+    expect(agent.intent).toMatchObject({ tactic: 'engage', targetId: 5 }); // the zombie, not the player
+  });
+
+  it('ignores a swing from a player too far away to have hit it', () => {
+    const { agent, bots } = online();
+    bots[0]!.entities['50'] = rival(50, 'Rival', -12);
+    bots[0]!.emit('entitySwingArm', bots[0]!.entities['50']);
+    bots[0]!.health = 16;
+    bots[0]!.emit('health');
+    bots[0]!.emit('physicsTick');
+    expect(agent.intent.tactic).toBe('idle');
+  });
+
+  it('never fights back against its owner, its allies or another bot in the swarm', () => {
+    const cfg = {
+      ...botConfig,
+      owner: 'Boss',
+      allies: ['Pal'],
+      protectedPlayers: ['Boss', 'Pal', 'JevBot', 'Mate'],
+    };
+    for (const name of ['Boss', 'boss', 'Pal', 'Mate']) {
+      const { agent, bots } = online(cfg);
+      bots[0]!.entities['50'] = rival(50, name);
+      bots[0]!.emit('entityHurt', bots[0]!.entity, bots[0]!.entities['50']);
+      bots[0]!.emit('physicsTick');
+      expect(agent.intent.tactic, `${name} should be safe`).toBe('idle');
+    }
+  });
+
+  it('protects its owner even when the protected list was built without them', () => {
+    const cfg = { ...botConfig, owner: 'Boss', protectedPlayers: ['JevBot'] };
+    const { agent, bots } = online(cfg);
+    bots[0]!.entities['50'] = rival(50, 'Boss', -2);
+    bots[0]!.emit('entityHurt', bots[0]!.entity, bots[0]!.entities['50']);
+    bots[0]!.emit('physicsTick');
+    expect(agent.intent.tactic).toBe('idle');
+  });
+
+  it('still fights a stranger while leaving its owner alone', () => {
+    const cfg = { ...botConfig, owner: 'Boss', protectedPlayers: ['Boss', 'JevBot'] };
+    const { agent, bots } = online(cfg);
+    bots[0]!.entities['50'] = rival(50, 'Boss', -2);
+    bots[0]!.entities['51'] = rival(51, 'Stranger', -5);
+    bots[0]!.emit('entityHurt', bots[0]!.entity, bots[0]!.entities['50']);
+    bots[0]!.emit('entityHurt', bots[0]!.entity, bots[0]!.entities['51']);
+    bots[0]!.emit('physicsTick');
+    expect(agent.intent).toMatchObject({ tactic: 'engage', targetId: 51 });
+  });
+
+  it('never fights players when pvp is switched off', () => {
+    const cfg = { ...botConfig, rules: { ...botConfig.rules, pvp: false } };
+    const { agent, bots } = online(cfg);
+    bots[0]!.entities['50'] = rival();
+    bots[0]!.emit('entityHurt', bots[0]!.entity, bots[0]!.entities['50']);
+    bots[0]!.emit('physicsTick');
+    expect(agent.intent.tactic).toBe('idle');
+  });
+
+  it('forgets who attacked it after dying', () => {
+    const { agent, bots } = online();
+    bots[0]!.entities['50'] = rival();
+    bots[0]!.emit('entityHurt', bots[0]!.entity, bots[0]!.entities['50']);
+    bots[0]!.emit('death');
+    bots[0]!.emit('spawn');
+    bots[0]!.emit('physicsTick');
+    expect(agent.intent.tactic).toBe('idle');
+  });
+
+  it('forgets an attacker after a while', () => {
+    const { agent, bots } = online();
+    bots[0]!.entities['50'] = rival();
+    bots[0]!.emit('entityHurt', bots[0]!.entity, bots[0]!.entities['50']);
+    bots[0]!.emit('physicsTick');
+    expect(agent.intent.tactic).toBe('engage');
+    vi.advanceTimersByTime(25_000);
+    bots[0]!.emit('physicsTick');
+    expect(agent.intent.tactic).toBe('idle');
+  });
+});
+
+describe('BotAgent judging players with Jev', () => {
+  const stranger = {
+    id: 60,
+    type: 'player',
+    username: 'Stranger',
+    position: { x: 0, y: 64, z: -5 },
+    velocity: { x: 0, y: 0, z: 0.2 },
+    heldItem: { name: 'iron_sword', count: 1 },
+  };
+
+  it('starts fighting a stranger Jev is very sure is about to attack', async () => {
+    const { client, requests } = scriptedClient(() => answers({ players: { 60: 0.95 } }));
+    const gateway = new JevGateway({
+      client,
+      limits: { maxCallsPerMinute: 1000, dailyBudgetUsd: 1 },
+    });
+    const bots: FakeBot[] = [];
+    const agent = new BotAgent(botConfig, config.server, {
+      logger: { info() {}, warn() {}, error() {} },
+      gateway,
+      createBot: () => {
+        const b = new FakeBot();
+        bots.push(b);
+        return { bot: b, actuator: new FakeActuator() };
+      },
+    });
+    agent.start();
+    bots[0]!.equipIron().emit('spawn');
+    bots[0]!.entities['60'] = stranger;
+    bots[0]!.emit('physicsTick');
+    expect(agent.intent.tactic).toBe('idle');
+    await vi.advanceTimersByTimeAsync(300);
+    expect(Object.keys(requests[0]!.questions)).toContain('hostile_p60');
+
+    bots[0]!.emit('physicsTick');
+    expect(agent.intent).toMatchObject({ tactic: 'engage', targetId: 60 });
+  });
+
+  it('leaves the stranger alone when Jev is not sure', async () => {
+    const { client } = scriptedClient(() => answers({ players: { 60: 0.6 } }));
+    const gateway = new JevGateway({
+      client,
+      limits: { maxCallsPerMinute: 1000, dailyBudgetUsd: 1 },
+    });
+    const bots: FakeBot[] = [];
+    const agent = new BotAgent(botConfig, config.server, {
+      logger: { info() {}, warn() {}, error() {} },
+      gateway,
+      createBot: () => {
+        const b = new FakeBot();
+        bots.push(b);
+        return { bot: b, actuator: new FakeActuator() };
+      },
+    });
+    agent.start();
+    bots[0]!.equipIron().emit('spawn');
+    bots[0]!.entities['60'] = stranger;
+    bots[0]!.emit('physicsTick');
+    await vi.advanceTimersByTimeAsync(300);
+    bots[0]!.emit('physicsTick');
+    expect(agent.intent.tactic).toBe('idle');
+  });
+});
