@@ -2,7 +2,7 @@
 
 An experiment in controlling a Minecraft (Java Edition) character with software. Bots built on [Mineflayer](https://github.com/PrismarineJS/mineflayer) perceive their surroundings, fight and act on their own. Fast reflexes are plain code. Judgment calls, such as whether to engage or retreat, come from [Jev](https://docs.typesafe.ai), TypeSafe's typed-decision model, reached through OpenRouter.
 
-**Status:** Phase 2 is done: bots connect, reconnect, perceive their surroundings, and fight hostile mobs by rules alone (chase, attack with the right timing, retreat at low HP, eat, wear armor). Jev decisions arrive in Phase 3. See [docs/phases.md](docs/phases.md).
+**Status:** Phase 2 is done: bots connect, reconnect, perceive their surroundings, and fight hostile mobs by rules alone (chase, attack with the right timing, retreat at low HP, eat, wear armor). Survival hardening (Phase 2.5) is next, then Jev decisions in Phase 3. See [docs/phases.md](docs/phases.md).
 
 ## How it works
 

@@ -7,7 +7,8 @@ Each phase ends with `npm run check` passing, the phase's integration scenario w
 | 0     | Repo and scaffolding                          | FR-9             | Done    |
 | 1     | Server, connection and perception             | FR-1, FR-2       | Done    |
 | 2     | Reflex layer: rules-only fighter against mobs | FR-3             | Done    |
-| 3     | Jev strategic layer against mobs              | FR-4, FR-5, FR-8 | Next    |
+| 2.5   | Survival hardening                            | FR-12            | Next    |
+| 3     | Jev strategic layer against mobs              | FR-4, FR-5, FR-8 | Planned |
 | 4     | Modes and chat commands                       | FR-6             | Planned |
 | 5     | Player combat                                 | FR-7             | Planned |
 | 6     | Multiple bots and swarm                       | FR-10, FR-11     | Planned |
@@ -41,6 +42,19 @@ Each phase ends with `npm run check` passing, the phase's integration scenario w
 - **Tests:**
   - Unit tests for the rules.
   - An integration test in which the bot kills a summoned zombie and survives.
+
+## Phase 2.5: Survival hardening
+
+The rules-only fighter can still die while retreating. Auto-eat makes it stop and eat with a zombie behind it, it retreats only when HP is already critical, and nothing notices when a retreat is failing. This phase fixes those three, and measures the result.
+
+- **Survival benchmark first.** An opt-in script (`npm run benchmark:survival`) runs each scenario about 20 times on the throwaway test server and reports survival rate and mean time to death. Scenarios: one zombie at low HP, three zombies at full HP, a baby zombie, a spider, a skeleton, and a creeper. The baseline goes into `docs/survival-benchmark.md` before any change, so every improvement is judged by numbers.
+- **No eating near hostiles.** Auto-eat is paused while a hostile is within `rules.noEatRadiusBlocks` (default 10), and any eating in progress is cancelled. Instant heals such as golden apples and healing potions are not affected. The decision is a pure function.
+- **Danger-based retreat.** A pure `assessDanger` function estimates whether the bot would win the fight from the number and type of hostiles, their distance, and the bot's HP, armor and weapon. The bot retreats when it would lose, or avoids starting the fight. `rules.retreatHp` stays as a hard floor. The mob stats table in code is approximate and documented as such.
+- **Retreat failure detection.** A pure `RetreatWatch` tracks the distance to the threat. If the distance hasn't grown by `rules.retreatMinGainBlocks` (default 1.5) within `rules.retreatCheckMs` (default 2000), the retreat has failed, and the bot fights back for a short time instead of standing still or being chased down.
+- **Tests:**
+  - Unit tests for each pure function (eating pause, danger estimate, retreat watch).
+  - The retreat integration test also checks that the bot does not eat while a zombie is close.
+  - Exit criteria: benchmark before and after are recorded, no scenario gets worse, and the low-HP scenarios improve.
 
 ## Phase 3: Jev strategic layer
 
@@ -84,3 +98,13 @@ Each phase ends with `npm run check` passing, the phase's integration scenario w
 - Analyse the decision logs.
 - Adjust the thresholds and questions.
 - Compare win rates against rules-only bots.
+
+## Backlog (not scheduled)
+
+Ideas from the survival discussion, to revisit once the benchmark shows where the bot still dies:
+
+- **Escape destinations.** Pick an open spot away from all threats (and toward home, the spawn point or a bed) and pathfind to it, instead of "get 24 blocks away". This avoids dead ends.
+- **Enemy-specific tactics.** Sprinting works against zombies. Baby zombies and spiders are faster than a sprinting player, so fight or block. Skeletons need broken line of sight. Creepers need 7+ blocks of distance and no melee. The speeds are from memory and should be measured first.
+- **Emergency tools.** Golden apples, healing potions, a totem of undying in the offhand, raising a shield, and blocking yourself in with blocks (this only stops melee mobs).
+- **Cheaper deaths.** The `keepInventory` gamerule for experiments, and remembering where the bot died.
+- **Jev judgments around survival.** For example "can I win this fight?" and "is it safe to stop and eat?". These arrive with Phase 3 and later. The flee reflex itself stays in code, because Jev is too slow for it.

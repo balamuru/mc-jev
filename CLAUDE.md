@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Phases 0-2 are done: scaffolding and config, connection and perception, and a rules-only reflex layer that fights hostile mobs. Jev (Phase 3) is not wired in yet. `docs/phases.md` is the source of truth for scope and status, and `docs/requirements.md` lists the functional requirements (FR-1 to FR-11).
+Phases 0-2 are done: scaffolding and config, connection and perception, and a rules-only reflex layer that fights hostile mobs. Phase 2.5 (survival hardening: no eating near hostiles, danger-based retreat, retreat-failure detection, survival benchmark) is next, and Jev (Phase 3) is not wired in yet. `docs/phases.md` is the source of truth for scope and status, and `docs/requirements.md` lists the functional requirements (FR-1 to FR-11).
 
 ## Commands
 

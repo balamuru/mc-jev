@@ -15,6 +15,7 @@ Each requirement lists the phase that delivers it (see [phases.md](phases.md)).
 | FR-9  | **Config**: one typed config file validated with zod, with `defaults`, per-bot `overrides`, shared `gateway` limits, and environment overrides for the server and Jev API. All tick rates, thresholds and limits are settings. | 0     |
 | FR-10 | **Multiple bots**: run N independent bots from `bots[]` in one process. Each has its own username, role, owner and settings, and all share one Jev rate limit and budget.                                                      | 6     |
 | FR-11 | **Swarm**: bots share observations and target claims (see below).                                                                                                                                                              | 6     |
+| FR-12 | **Survive a retreat**: the bot must not stop to eat with hostiles close, must retreat when it would lose a fight (not only at critical HP), and must notice a failing retreat and fall back to fighting.                       | 2.5   |
 
 ## Details
 
@@ -73,6 +74,13 @@ Each log line records:
 - the action taken
 
 The API key is never logged.
+
+### FR-12 Survive a retreat
+
+- **No eating near hostiles:** auto-eat is paused within `rules.noEatRadiusBlocks` of a hostile. Instant heals are exempt.
+- **Danger-based retreat:** the bot retreats when an estimate of the fight says it would lose. `rules.retreatHp` remains a hard floor.
+- **Failing retreat:** if the distance to the threat hasn't grown by `rules.retreatMinGainBlocks` within `rules.retreatCheckMs`, the bot fights back.
+- **Measured:** the survival benchmark reports survival rate per scenario, and its baseline and results are recorded in `docs/survival-benchmark.md`.
 
 ### FR-11 Swarm
 
