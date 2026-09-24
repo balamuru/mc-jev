@@ -22,9 +22,8 @@ function note(record: unknown): void {
 }
 
 live('Jev live smoke test', () => {
-  const client = createJevClient({ apiKey: apiKey!, baseURL });
   const gateway = new JevGateway({
-    client,
+    client: createJevClient({ apiKey: apiKey ?? 'unset', baseURL }),
     limits: { maxCallsPerMinute: 30, dailyBudgetUsd: 0.05 },
   });
   const ask = (snapshot: ReturnType<typeof snap>) =>
