@@ -5,10 +5,16 @@
  *
  * Options: --trials N (default 8), --scenarios a,b,c (default all), --label NAME,
  *          --timeout SECONDS per trial (default 30), --port N (default 25597),
+ *          --jev to let the bot ask Jev (needs TYPESAFE_API_KEY; costs a few cents in total),
  *          --rules JSON to override rule settings (e.g. '{"retreatHp":0,"dangerMargin":1000}'
  *          makes the bot never retreat, for comparing policies).
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { config as loadEnv } from 'dotenv';
+import { JevGateway } from '../src/strategic/gateway.js';
+import { createJevClient } from '../src/strategic/jev.js';
+import { formatSummary, summarize } from '../src/telemetry/analyze.js';
+import { JsonlDecisionLog, type DecisionEntry } from '../src/telemetry/decisionLog.js';
 import { makeAgent, sleep, waitFor, type TestAgent } from '../test/integration/helpers.js';
 import { startTestServer, type TestServer } from '../test/integration/serverHarness.js';
 
@@ -111,7 +117,8 @@ function parseArgs(argv: string[]) {
     label: get('label', 'run'),
     timeoutMs: Number(get('timeout', '30')) * 1000,
     port: Number(get('port', '25597')),
-    rules: JSON.parse(get('rules', '{}')) as Record<string, number>,
+    rules: JSON.parse(get('rules', '{}')) as Record<string, number | boolean>,
+    jev: argv.includes('--jev'),
   };
 }
 
@@ -205,7 +212,34 @@ async function main() {
   const server = await startTestServer(args.port);
   const name = `Bench${Math.random().toString(36).slice(2, 6)}`;
   const template = makeAgent(server, name).agent.config;
-  const bot = makeAgent(server, name, { rules: { ...template.rules, ...args.rules } });
+
+  // With --jev the bot asks the real API; every decision is kept so it can be analysed afterwards.
+  loadEnv({ quiet: true });
+  const collected: DecisionEntry[] = [];
+  let gateway: JevGateway | undefined;
+  if (args.jev) {
+    const apiKey = process.env.TYPESAFE_API_KEY;
+    if (!apiKey) throw new Error('--jev needs TYPESAFE_API_KEY (in .env or the environment)');
+    gateway = new JevGateway({
+      client: createJevClient({ apiKey, baseURL: process.env.TYPESAFE_BASE_URL || undefined }),
+      limits: { maxCallsPerMinute: 600, dailyBudgetUsd: 0.5 },
+    });
+  }
+  const decisionFile = new JsonlDecisionLog(`logs/bench-${args.label}`);
+  const bot = makeAgent(
+    server,
+    name,
+    { rules: { ...template.rules, ...args.rules } },
+    {
+      gateway,
+      decisions: {
+        write: (e) => {
+          collected.push(e);
+          decisionFile.write(e);
+        },
+      },
+    },
+  );
   const results: Record<string, TrialResult[]> = {};
   try {
     await server.run('gamerule advance_time false');
@@ -265,6 +299,12 @@ async function main() {
   const file = `logs/survival-${args.label}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
   writeFileSync(file, JSON.stringify({ label: args.label, args, rows, results }, null, 2));
   console.log(`\nfull results: ${file}`);
+  if (gateway) {
+    const g = gateway.stats();
+    console.log(
+      `\nJev: ${g.calls} calls, ${g.failures} failed, $${g.costUsd.toFixed(5)}\n${formatSummary(summarize(collected))}`,
+    );
+  }
 }
 
 main().then(

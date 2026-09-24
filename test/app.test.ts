@@ -100,6 +100,7 @@ describe('buildApp', () => {
       threeBots(r);
       r.server.staggerMs = 0;
       r.gateway.maxCallsPerMinute = 2;
+      r.swarm.mode = 'independent';
     });
     app.start();
     vi.advanceTimersByTime(1);
@@ -114,10 +115,11 @@ describe('buildApp', () => {
     app.stop();
   });
 
-  it('lets every bot make its own decisions, without a swarm by default', async () => {
+  it('lets every bot make its own decisions in independent mode', async () => {
     const { app, bots } = build((r) => {
       threeBots(r);
       r.server.staggerMs = 0;
+      r.swarm.mode = 'independent';
     });
     app.start();
     vi.advanceTimersByTime(1);
@@ -132,11 +134,10 @@ describe('buildApp', () => {
     app.stop();
   });
 
-  it('puts the bots in a cooperative swarm when configured', () => {
+  it('puts the bots in a cooperative swarm by default', () => {
     const { app, bots } = build((r) => {
       threeBots(r);
       r.server.staggerMs = 0;
-      r.swarm.mode = 'cooperative';
     });
     app.start();
     vi.advanceTimersByTime(1);

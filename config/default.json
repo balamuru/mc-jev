@@ -6,11 +6,11 @@
     "staggerMs": 1000
   },
   "gateway": {
-    "maxCallsPerMinute": 60,
+    "maxCallsPerMinute": 300,
     "dailyBudgetUsd": 1.0
   },
   "swarm": {
-    "mode": "independent",
+    "mode": "cooperative",
     "claimTtlMs": 8000,
     "helpHp": 8,
     "helpAllies": true,
@@ -57,7 +57,7 @@
     },
     "jev": {
       "model": "jev-latest",
-      "timeoutMs": 800,
+      "timeoutMs": 1000,
       "maxRetries": 0,
       "thresholds": {
         "act": 0.7,

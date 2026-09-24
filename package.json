@@ -19,7 +19,10 @@
     "typecheck": "tsc --noEmit",
     "check": "npm run lint && npm run typecheck && npm test",
     "benchmark:survival": "tsx scripts/survival-benchmark.ts",
-    "test:live": "vitest run --config vitest.live.config.ts"
+    "test:live": "vitest run --config vitest.live.config.ts",
+    "analyze:decisions": "tsx scripts/analyze-decisions.ts",
+    "eval:jev": "tsx scripts/eval-questions.ts",
+    "benchmark:squad": "tsx scripts/squad-benchmark.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

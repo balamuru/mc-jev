@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Phases 0-6 are done: scaffolding and config, connection and perception, the rules-based reflex layer, survival hardening, the Jev strategic layer, modes with owner chat commands, and player combat, and multiple bots with swarms. Next is Phase 7 (tuning). `docs/phases.md` is the source of truth for scope and status, and `docs/requirements.md` lists the functional requirements (FR-1 to FR-12).
+All planned phases (0-7) are done: scaffolding and config, connection and perception, the rules-based reflex layer, survival hardening, the Jev strategic layer, modes with owner chat commands, player combat, multiple bots with swarms, and measurement-driven tuning. `docs/tuning.md` and `docs/survival-benchmark.md` record what the benchmarks showed; re-run them before changing a default. `docs/phases.md` is the source of truth for scope and status, and `docs/requirements.md` lists the functional requirements (FR-1 to FR-12).
 
 ## Commands
 
@@ -19,7 +19,10 @@ npm run format                     # Prettier (CI runs `format:check`)
 npm run check                      # lint + typecheck + tests
 npm run test:integration           # opt-in; starts throwaway flat-world Paper servers (ports 25593-25599)
 npm run test:live                  # opt-in; a few real Jev calls with the key in .env (fractions of a cent)
-npm run benchmark:survival         # opt-in; ~15 min; survival rate per fight scenario (see docs/survival-benchmark.md)
+npm run benchmark:survival         # opt-in; ~15 min; survival rate per fight scenario (see docs/survival-benchmark.md); add --jev to use the real API
+npm run benchmark:squad            # opt-in; three bots vs a wave, per swarm mode (see docs/tuning.md)
+npm run eval:jev                   # opt-in; the Jev question set on labeled situations (a fraction of a cent)
+npm run analyze:decisions          # summarize logs/decisions-*.jsonl
 ```
 
 ## Architecture
@@ -37,7 +40,7 @@ The full write-up is in `docs/architecture.md`. The parts that need reading acro
 - **Who decides each reflex step:** a fight-back after a failed retreat, else Jev's override (`ReflexLoop.setOverride`), else the current mode (`ModeController` in `src/control/modes.ts`, which uses the rules for combat). Intents are `idle`, `engage`, `retreat`, `follow` and `goto`.
 - **Strategic layer** (`src/strategic/`): `layer.ts` schedules and applies decisions, `gateway.ts` is the shared limiter (rate, daily budget, cooldowns, one call per bot), `jev.ts` wraps the SDK, `questions.ts` builds the versioned question set, `policy.ts` merges Jev with the rules (Jev can add caution freely, but cannot remove it at critical HP). Every decision goes to `logs/decisions-*.jsonl`.
 - **Player combat.** A player is a threat only after attacking the bot (`src/perception/provocation.ts`) or when Jev is very sure and they are armed and close. The owner, `allies` and other configured bots are never attacked: `isProtectedPlayer` is enforced in the rules, in Jev's target list and in the actuator, and `protectedFor(config)` always adds the owner. Do not build a `BotConfig` by hand without going through it.
-- **Swarm** (`src/swarm/`): `buildApp` (`src/app.ts`) assembles everything. Bots share a `Bus` (JSON events, in-process so NATS can replace it) and a `Blackboard` (allies, first-wins claims with expiry, known threats, coordinator focus); each bot has a `SwarmMember`. `ModeController` uses it for focus fire, avoiding claimed targets and helping hurt allies. `swarm.mode: independent` (default) makes bots ignore all of it. The coordinator only issues time-limited focus directives, so bots never depend on it.
+- **Swarm** (`src/swarm/`): `buildApp` (`src/app.ts`) assembles everything. Bots share a `Bus` (JSON events, in-process so NATS can replace it) and a `Blackboard` (allies, first-wins claims with expiry, known threats, coordinator focus); each bot has a `SwarmMember`. `ModeController` uses it for focus fire, avoiding claimed targets and helping hurt allies. `swarm.mode: independent` makes bots ignore all of it; `cooperative` is the default because the benchmark showed it cuts squad damage by about a third (`docs/tuning.md`). The coordinator only issues time-limited focus directives, so bots never depend on it.
 - **Chat commands** (`src/control/commands.ts`): exact-match, owner-only. The owner is looked up directly through `bot.players` so following works beyond the perception radius.
 - **No `mineflayer-pvp`.** It is unmaintained and relies on the deprecated `physicTick` event, so combat (aim, reach check, weapon cooldown) is our own code in `MineflayerActuator`. Pathfinder, auto-eat and armor-manager are used; armor-manager only reacts to picked-up items, so `attachPlugins` also re-checks armor when an armor item enters the inventory.
 - **`mineflayer-pathfinder` is loaded with `createRequire`** because Node's ESM loader does not expose its `goals` export.
@@ -49,6 +52,7 @@ The full write-up is in `docs/architecture.md`. The parts that need reading acro
 - Use TypeSafe's official SDK, `@typesafe-ai/sdk`, through **OpenRouter**: `TYPESAFE_API_KEY` holds the OpenRouter key and `TYPESAFE_BASE_URL=https://openrouter.ai/api`. The model is `jev-latest`.
 - Do not use the third-party `thejevai.com` wrapper or the `jev-ai/jev-agent-skill` package.
 - `client.models.list()` doesn't work through OpenRouter, so don't call it.
+- The SDK leaks an unobserved `AbortError` when a call is cancelled or times out mid-body, which would crash the process. `installAbortGuard` in `src/strategic/jev.ts` handles it; keep it if you touch the client, and don't remove it because "nothing crashed".
 - The TypeSafe agent skill is installed twice on purpose: as a Claude Code plugin, and as a project copy in `.agents/skills/typesafe-ai` for Gemini. Update both together.
 
 ## Conventions

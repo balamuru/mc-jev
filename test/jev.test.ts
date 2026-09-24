@@ -2,6 +2,8 @@ import { APIConnectionError, APIError, APITimeoutError, APIUserAbortError } from
 import { describe, expect, it, vi } from 'vitest';
 import {
   INPUT_USD_PER_TOKEN,
+  installAbortGuard,
+  isAbortLike,
   JevError,
   costOf,
   createJevClient,
@@ -167,5 +169,40 @@ describe('createJevClient (real SDK, fake network)', () => {
       },
     });
     await expect(client.ask(request, options)).rejects.toMatchObject({ kind: 'network' });
+  });
+});
+
+describe('the abort guard for the SDK’s leaked rejections', () => {
+  it('recognizes abort and timeout errors, and nothing else', () => {
+    expect(isAbortLike(new DOMException('This operation was aborted', 'AbortError'))).toBe(true);
+    expect(isAbortLike(new APIUserAbortError())).toBe(true);
+    expect(isAbortLike(new APITimeoutError(800))).toBe(true);
+    const named = new Error('x');
+    named.name = 'AbortError';
+    expect(isAbortLike(named)).toBe(true);
+    expect(isAbortLike(new Error('boom'))).toBe(false);
+    expect(isAbortLike(new TypeError('fetch failed'))).toBe(false);
+    expect(isAbortLike('AbortError')).toBe(false);
+    expect(isAbortLike(undefined)).toBe(false);
+  });
+
+  it('is installed once however many clients are created', () => {
+    const before = process.listenerCount('unhandledRejection');
+    createJevClient({ apiKey: 'k', fetch: async () => new Response('{}') });
+    createJevClient({ apiKey: 'k', fetch: async () => new Response('{}') });
+    installAbortGuard();
+    expect(process.listenerCount('unhandledRejection')).toBeLessThanOrEqual(before + 1);
+    const after = process.listenerCount('unhandledRejection');
+    installAbortGuard();
+    expect(process.listenerCount('unhandledRejection')).toBe(after);
+  });
+
+  it('lets a real unhandled error through: the listener throws for anything but an abort', () => {
+    createJevClient({ apiKey: 'k', fetch: async () => new Response('{}') });
+    const listeners = process.listeners('unhandledRejection') as Array<(r: unknown) => void>;
+    const guard = listeners.find((l) => l.toString().includes('isAbortLike'));
+    expect(guard).toBeDefined();
+    expect(() => guard!(new DOMException('aborted', 'AbortError'))).not.toThrow();
+    expect(() => guard!(new Error('a real bug'))).toThrow('a real bug');
   });
 });

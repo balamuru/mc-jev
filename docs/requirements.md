@@ -101,8 +101,8 @@ The API key is never logged.
 
 Bots share observations and target claims through a `Bus` and a `Blackboard` (`swarm.mode`):
 
-- **independent** (default): bots ignore each other.
-- **cooperative:** bots claim targets so that they do not all pile onto one, help a hurt ally that was hit recently, and tell Jev about the squad.
+- **independent:** bots ignore each other.
+- **cooperative (default):** bots claim targets so that they do not all pile onto one, help a hurt ally that was hit recently, and tell Jev about the squad.
 - **coordinated:** as cooperative, plus an optional coordinator that asks Jev which threat the whole squad should focus on. A bot never depends on it: without a current directive, it chooses for itself.
 
 The owner, allies and every other bot in the config are never attacked (see FR-7).
@@ -111,7 +111,7 @@ The owner, allies and every other bot in the config are never attacked (see FR-7
 
 - **Latency:**
   - The reflex layer never waits on I/O.
-  - Jev calls default to an 800ms timeout (a call takes about 270ms in practice).
+  - Jev calls default to a 1000ms timeout (a call takes about 190ms typically, and under 750ms in every measured case).
   - The game tick is 50ms. Jev is never called inside a tick.
 - **Cost:** about $0.00003 per Jev call, so under $0.06/hour per bot even with a threat present all the time (measured). See the cost section in [architecture.md](architecture.md).
 - **Security:**

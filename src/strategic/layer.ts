@@ -241,6 +241,7 @@ export class StrategicLayer {
       outcome: decision.source === 'jev' ? 'applied' : 'rules',
       why: decision.why,
       ...(hostile.length ? { hostilePlayers: hostile } : {}),
+      rulesIntent: { tactic: rulesIntent.tactic, targetId: rulesIntent.targetId },
       intent: {
         tactic: decision.intent.tactic,
         targetId: decision.intent.targetId,

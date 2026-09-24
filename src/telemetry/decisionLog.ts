@@ -34,6 +34,8 @@ export interface DecisionEntry {
   };
   /** Players Jev judged to be about to attack, and who were therefore marked hostile. */
   hostilePlayers?: string[];
+  /** What the rules alone would have done in this situation. */
+  rulesIntent?: { tactic: string; targetId?: number };
   /** The intent that resulted, if any. */
   intent?: { tactic: string; targetId?: number; reason: string };
   latencyMs?: number;

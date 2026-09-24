@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   HIT_EFFICIENCY,
+  attackStyle,
   playerStats,
   armorPoints,
   armorReduction,
@@ -184,4 +185,15 @@ describe('players as opponents', () => {
     });
     expect(armed.expectedDamage).toBeGreaterThan(bare.expectedDamage);
   });
+});
+
+describe('attackStyle', () => {
+  it.each([
+    ['zombie', 'melee'],
+    ['spider', 'melee'],
+    ['skeleton', 'ranged'],
+    ['blaze', 'ranged'],
+    ['creeper', 'explodes'],
+    ['something_unknown', 'melee'],
+  ])('%s is %s', (kind, style) => expect(attackStyle(kind)).toBe(style));
 });

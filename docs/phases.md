@@ -12,7 +12,7 @@ Each phase ends with `npm run check` passing, the phase's integration scenario w
 | 4     | Modes and chat commands                       | FR-6             | Done   |
 | 5     | Player combat                                 | FR-7             | Done   |
 | 6     | Multiple bots and swarm                       | FR-10, FR-11     | Done   |
-| 7     | Tuning (optional)                             | none             | Next   |
+| 7     | Tuning (optional)                             | none             | Done   |
 
 ## Phase 0: Repo and scaffolding
 
@@ -93,11 +93,16 @@ The rules-only fighter could die while retreating: auto-eat made it stop and eat
 - **`swarm/coordinator.ts`:** the optional coordinator, asking Jev for a squad focus target.
 - **Tests:** unit tests for every piece; agent tests with real bus and blackboard; `buildApp` tests for staggering, the shared limit and the modes; and an integration test in which a squad of three bots beats a wave of six zombies on a real server, holding different targets at the same time, with nobody lost.
 
-## Phase 7: Tuning (optional)
+## Phase 7: Tuning
 
-- Analyse the decision logs.
-- Adjust the thresholds and questions.
-- Compare win rates against rules-only bots.
+Measurements, not intuition, decided the defaults. The full write-up is in [tuning.md](tuning.md).
+
+- **Tools:** `npm run eval:jev` (the question set on 17 labeled situations), `npm run benchmark:survival -- --jev`, `npm run benchmark:squad` and `npm run analyze:decisions`. Each decision now also logs what the rules alone would have done, so the analyzer can say how often Jev truly differed.
+- **Jev against rules:** at parity on survival (75% against 75% over 20 trials of the hardest scenario). Jev is not a survival win for mobs, but it costs almost nothing and does not hurt.
+- **Questions:** v3 adds each mob's max health and attack style, which fixed a ravager that Jev rated too safe. 13 of 13 evaluation expectations now hold, against 12 of 13.
+- **Defaults changed:** `jev.timeoutMs` 800 → 1000 (the slowest measured calls were 743 and 908 ms), `gateway.maxCallsPerMinute` 60 → 300 (a squad makes about 70 decisions a minute), and `swarm.mode` `independent` → `cooperative` (squad damage down by about a third in both benchmarks).
+- **Not helpful:** the coordinator's focus-fire directive did not beat plain cooperation.
+- **A bug found:** an SDK bug that crashed the whole process under load, now guarded.
 
 ## Backlog (not scheduled)
 

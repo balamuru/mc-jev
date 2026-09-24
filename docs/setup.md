@@ -117,6 +117,17 @@ npm run benchmark:survival -- --scenarios zombie-lowhp,creeper --trials 20
 
 Options: `--trials N` (default 8), `--scenarios a,b,c` (default all), `--label NAME`, `--timeout SECONDS` per trial (default 30), `--port N` (default 25597). Natural regeneration is switched off so that starting HP is a controlled variable. Results are printed as a table and saved to `logs/survival-<label>-<time>.json`. A full run takes about 15 minutes. See [survival-benchmark.md](survival-benchmark.md) for results and how to read them.
 
+### Tuning tools
+
+These are for Phase 7 and later work. The findings so far are in [tuning.md](tuning.md).
+
+| Command                               | What it does                                                                                                                                                                                                        | Cost                                   |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `npm run eval:jev`                    | Runs the Jev question set on 17 labeled situations with the real API and reports which expectations held. Rerun it after changing a question in `src/strategic/questions.ts`.                                       | about $0.0006                          |
+| `npm run benchmark:survival -- --jev` | The survival benchmark with the bot asking the real API, then a summary of its decisions (outcomes, latency, cost).                                                                                                 | about $0.02 for a full run             |
+| `npm run benchmark:squad`             | Three bots against a wave of zombies in each swarm mode. Options: `--trials N`, `--modes independent,cooperative,coordinated`, `--wave N`, `--jev`, `--label NAME`. Reports time to clear, squad damage and deaths. | free without `--jev`; about $0.03 with |
+| `npm run analyze:decisions`           | Summarizes the decision logs in `logs/`: outcomes, latency percentiles and a suggested timeout, cost, how confident Jev was per tactic, and how often it really differed from the rules.                            | free                                   |
+
 ### Decision log
 
 While a bot runs with Jev, every decision is appended to `logs/decisions-YYYY-MM-DD.jsonl`, one JSON object per line. To see what Jev is doing:
@@ -139,14 +150,14 @@ tail -f logs/decisions-*.jsonl | jq -c '{agent, trigger, outcome, why, intent: .
 
 | Setting                     | Meaning                                                                       | Default |
 | --------------------------- | ----------------------------------------------------------------------------- | ------- |
-| `gateway.maxCallsPerMinute` | Maximum Jev calls per minute, across all bots                                 | 60      |
+| `gateway.maxCallsPerMinute` | Maximum Jev calls per minute, across all bots                                 | 300     |
 | `gateway.dailyBudgetUsd`    | Daily Jev spending cap. Once reached, bots use rules only. `0` turns Jev off. | 1.0     |
 
 ### Swarm
 
 | Setting                                                  | Meaning                                                                                                      | Default            |
 | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------ |
-| `swarm.mode`                                             | `independent`, `cooperative` or `coordinated` (see [architecture.md](architecture.md#swarm-modes-swarmmode)) | `independent`      |
+| `swarm.mode`                                             | `independent`, `cooperative` or `coordinated` (see [architecture.md](architecture.md#swarm-modes-swarmmode)) | `cooperative`      |
 | `swarm.claimTtlMs`                                       | A target claim lapses after this long without being refreshed                                                | 8000               |
 | `swarm.helpHp`                                           | An ally at or below this HP that was hit in the last 5 seconds counts as needing help                        | 8                  |
 | `swarm.helpAllies`                                       | Bots go to the aid of an ally in trouble                                                                     | true               |
@@ -186,7 +197,7 @@ tail -f logs/decisions-*.jsonl | jq -c '{agent, trigger, outcome, why, intent: .
 | `defaults.strategic.eventTriggers`                  | Events that trigger an immediate decision                                                                            | `hurt`, `newThreat`, `lowHp` |
 | `defaults.strategic.minGapMs`                       | Minimum time between any two decisions                                                                               | 250                          |
 | `defaults.jev.model`                                | Jev model                                                                                                            | `jev-latest`                 |
-| `defaults.jev.timeoutMs`, `defaults.jev.maxRetries` | Timeout per call, and how many retries                                                                               | 800, 0                       |
+| `defaults.jev.timeoutMs`, `defaults.jev.maxRetries` | Timeout per call, and how many retries                                                                               | 1000, 0                      |
 | `defaults.jev.thresholds.act`                       | Confidence needed to act on a decision                                                                               | 0.7                          |
 | `defaults.jev.thresholds.cautious`                  | Confidence needed to act cautiously. Below this, rules decide.                                                       | 0.5                          |
 

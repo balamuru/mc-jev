@@ -243,10 +243,10 @@ describe('protectedFor', () => {
 });
 
 describe('swarm and server stagger settings', () => {
-  it('has defaults: independent bots, started a second apart', () => {
+  it('has defaults: cooperative bots, started a second apart', () => {
     const cfg = parseConfig(base());
     expect(cfg.swarm).toEqual({
-      mode: 'independent',
+      mode: 'cooperative',
       claimTtlMs: 8000,
       helpHp: 8,
       helpAllies: true,

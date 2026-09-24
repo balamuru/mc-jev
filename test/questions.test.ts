@@ -271,7 +271,43 @@ describe('squad in the state and questions', () => {
     expect(alone.target.instructions).not.toContain('squad');
   });
 
-  it('is version v2', () => {
-    expect(QUESTION_SET_VERSION).toBe('v2');
+  it('is version v3', () => {
+    expect(QUESTION_SET_VERSION).toBe('v3');
+  });
+});
+
+describe('plain facts about each threat', () => {
+  const state = buildState(
+    snap(20, [
+      mob(1, 4, { kind: 'zombie' }),
+      mob(2, 5, { kind: 'skeleton' }),
+      mob(3, 6, { kind: 'creeper' }),
+      mob(4, 7, { kind: 'ravager' }),
+      mob(5, 8, { kind: 'never_heard_of_it' }),
+    ]),
+    16,
+  ) as { threats: Array<{ id: string; max_health: number; attack_style: string }> };
+  const byId = Object.fromEntries(state.threats.map((t) => [t.id, t]));
+
+  it('gives Jev each mob’s health and how it attacks, for mobs it may not know well', () => {
+    expect(byId.t1).toMatchObject({ max_health: 20, attack_style: 'melee' });
+    expect(byId.t2).toMatchObject({ max_health: 20, attack_style: 'ranged' });
+    expect(byId.t3).toMatchObject({ max_health: 20, attack_style: 'explodes' });
+    expect(byId.t4).toMatchObject({ max_health: 100, attack_style: 'melee' });
+  });
+
+  it('falls back to a zombie-like default for a mob it has no numbers for', () => {
+    expect(byId.t5).toMatchObject({ max_health: 20, attack_style: 'melee' });
+  });
+
+  it('describes a player as 20 HP and melee', () => {
+    const s = buildState(
+      snap(20, [mob(9, 5, { category: 'player', kind: 'Rival', provoked: true })]),
+      16,
+      {
+        pvp: true,
+      },
+    ) as { threats: Array<{ max_health: number; attack_style: string }> };
+    expect(s.threats[0]).toMatchObject({ max_health: 20, attack_style: 'melee' });
   });
 });

@@ -170,6 +170,7 @@ describe('StrategicLayer decisions', () => {
       inputTokens: 900,
       costUsd: 0.0000378,
       intent: { tactic: 'retreat', targetId: 1 },
+      rulesIntent: { tactic: 'engage', targetId: 1 },
       answers: { tactic: { choice: 'retreat', confidence: 0.9 }, ambush: 0.1 },
     });
     expect(entries[0]!.situation).toContain('zombie 5.0m');

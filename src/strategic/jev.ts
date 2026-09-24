@@ -67,6 +67,32 @@ export interface JevApiSettings {
   fetch?: Fetch;
 }
 
+/** True for the abort and timeout errors that the SDK can leave unobserved (see `installAbortGuard`). */
+export function isAbortLike(reason: unknown): boolean {
+  return (
+    reason instanceof APIUserAbortError ||
+    reason instanceof APITimeoutError ||
+    (reason instanceof Error && reason.name === 'AbortError')
+  );
+}
+
+let abortGuardInstalled = false;
+
+/**
+ * Work around an SDK bug: when a call is cancelled, or times out, while its response body is
+ * still arriving, the SDK leaves an `AbortError` rejection that nothing is listening to, which
+ * Node treats as fatal and would take every bot down. This swallows exactly those abort-type
+ * rejections and re-throws anything else, so real bugs still crash as they would have. Installed
+ * once, by the first `createJevClient`.
+ */
+export function installAbortGuard(): void {
+  if (abortGuardInstalled) return;
+  abortGuardInstalled = true;
+  process.on('unhandledRejection', (reason) => {
+    if (!isAbortLike(reason)) throw reason;
+  });
+}
+
 /** Turn whatever the SDK threw into a `JevError`. Exported for tests. */
 export function toJevError(err: unknown): JevError {
   if (err instanceof JevError) return err;
@@ -99,6 +125,7 @@ export function costOf(usage: { input_tokens: number; cost?: unknown }): number 
 
 /** A real client over TypeSafe's official SDK. The API key never leaves this object. */
 export function createJevClient(settings: JevApiSettings): JevClient {
+  installAbortGuard();
   const client = new TypeSafeClient({
     apiKey: settings.apiKey,
     baseURL: settings.baseURL,

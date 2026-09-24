@@ -119,6 +119,13 @@ export const HIT_EFFICIENCY = 0.85;
 /** A creeper explodes about this long after it ignites, unless it is killed first. */
 const CREEPER_FUSE_SECONDS = 1.5;
 
+/** How a mob hurts the bot, as a plain fact for Jev: `explodes`, `ranged` or `melee`. */
+export function attackStyle(kind: string): 'explodes' | 'ranged' | 'melee' {
+  const stats = mobStats(kind);
+  if (stats.burst > 0) return 'explodes';
+  return stats.speed === 0 ? 'ranged' : 'melee';
+}
+
 export function mobStats(kind: string): MobStats {
   return MOB_STATS[kind] ?? DEFAULT_MOB;
 }

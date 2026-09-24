@@ -2,11 +2,11 @@ import type { EntryType, Questions } from '@typesafe-ai/sdk';
 import type { EntitySummary, Snapshot } from '../perception/types.js';
 import { isProtectedPlayer } from '../reflex/protect.js';
 import type { SwarmContext } from '../swarm/member.js';
-import { NEUTRAL_MOBS, armorPoints } from '../reflex/danger.js';
+import { NEUTRAL_MOBS, armorPoints, attackStyle, mobStats } from '../reflex/danger.js';
 import type { JevAnswer } from './jev.js';
 
 /** Bump whenever a question or its wording changes: every logged decision records it. */
-export const QUESTION_SET_VERSION = 'v2';
+export const QUESTION_SET_VERSION = 'v3';
 
 /** At most this many threats are described to Jev, nearest first. */
 export const MAX_THREATS_IN_STATE = 6;
@@ -99,6 +99,9 @@ export function buildState(
       approaching: e.approaching,
       holding: e.held,
       visible: e.visible,
+      // Plain facts about the mob, for kinds the judge may not know well.
+      max_health: e.category === 'player' ? 20 : mobStats(e.kind).hp,
+      attack_style: e.category === 'player' ? 'melee' : attackStyle(e.kind),
       // Neutral mobs leave the bot alone unless attacked.
       neutral_until_attacked: NEUTRAL_MOBS.has(e.kind),
     })),
