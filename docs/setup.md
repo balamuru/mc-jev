@@ -129,10 +129,11 @@ tail -f logs/decisions-*.jsonl | jq -c '{agent, trigger, outcome, why, intent: .
 
 ### Server
 
-| Setting                      | Meaning                                                           | Default           |
-| ---------------------------- | ----------------------------------------------------------------- | ----------------- |
-| `server.host`, `server.port` | Server address. `MC_HOST` and `MC_PORT` override these.           | `localhost:25565` |
-| `server.version`             | Minecraft protocol version, or `false` to detect it automatically | `false`           |
+| Setting                      | Meaning                                                                                           | Default           |
+| ---------------------------- | ------------------------------------------------------------------------------------------------- | ----------------- |
+| `server.host`, `server.port` | Server address. `MC_HOST` and `MC_PORT` override these.                                           | `localhost:25565` |
+| `server.version`             | Minecraft protocol version, or `false` to detect it automatically                                 | `false`           |
+| `server.staggerMs`           | Wait this long between starting one bot and the next, so a server's login throttle is not tripped | 1000              |
 
 ### Limits shared by all bots
 
@@ -140,6 +141,18 @@ tail -f logs/decisions-*.jsonl | jq -c '{agent, trigger, outcome, why, intent: .
 | --------------------------- | ----------------------------------------------------------------------------- | ------- |
 | `gateway.maxCallsPerMinute` | Maximum Jev calls per minute, across all bots                                 | 60      |
 | `gateway.dailyBudgetUsd`    | Daily Jev spending cap. Once reached, bots use rules only. `0` turns Jev off. | 1.0     |
+
+### Swarm
+
+| Setting                                                  | Meaning                                                                                                      | Default            |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------ |
+| `swarm.mode`                                             | `independent`, `cooperative` or `coordinated` (see [architecture.md](architecture.md#swarm-modes-swarmmode)) | `independent`      |
+| `swarm.claimTtlMs`                                       | A target claim lapses after this long without being refreshed                                                | 8000               |
+| `swarm.helpHp`                                           | An ally at or below this HP that was hit in the last 5 seconds counts as needing help                        | 8                  |
+| `swarm.helpAllies`                                       | Bots go to the aid of an ally in trouble                                                                     | true               |
+| `swarm.coordinator.intervalMs`                           | How often the coordinator looks at the situation                                                             | 4000               |
+| `swarm.coordinator.directiveTtlMs`                       | How long a focus directive holds                                                                             | 6000               |
+| `swarm.coordinator.model`, `swarm.coordinator.timeoutMs` | Jev model and timeout for the coordinator                                                                    | `jev-latest`, 1500 |
 
 ### Debugging
 
@@ -187,6 +200,17 @@ tail -f logs/decisions-*.jsonl | jq -c '{agent, trigger, outcome, why, intent: .
 | `bots[].allies`    | Players this bot must never attack, in addition to its owner and every other bot in the config | none      |
 | `bots[].mode`      | What the bot does until told otherwise: `guard`, `hunt` or `idle`                              | `guard`   |
 | `bots[].overrides` | Any `perception`, `reflex`, `rules`, `strategic` or `jev` settings for this bot only           | none      |
+
+To run a squad, list several bots and set the swarm mode. Every bot in the list is protected from every other (they never attack each other):
+
+```json
+"swarm": { "mode": "cooperative", ... },
+"bots": [
+  { "username": "Alpha", "owner": "YourName" },
+  { "username": "Bravo", "owner": "YourName" },
+  { "username": "Charlie", "owner": "YourName" }
+]
+```
 
 Example: two bots, where the second decides more often and needs more confidence before acting:
 

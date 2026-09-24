@@ -96,11 +96,36 @@ const gatewaySchema = z.object({
   dailyBudgetUsd: z.number().min(0),
 });
 
+const swarmSchema = z.object({
+  /**
+   * How bots relate to each other. `independent`: they ignore one another. `cooperative`: they
+   * share what they see and claim targets so they do not pile onto the same one. `coordinated`:
+   * as cooperative, plus a coordinator that picks a focus target for the squad.
+   */
+  mode: z.enum(['independent', 'cooperative', 'coordinated']),
+  /** A target claim lapses after this long without being refreshed. */
+  claimTtlMs: z.number().int().min(500),
+  /** A bot at or below this HP that was hit recently counts as needing help. */
+  helpHp: z.number().min(0).max(20),
+  /** Bots go to the aid of an ally in trouble. */
+  helpAllies: z.boolean(),
+  coordinator: z.object({
+    /** How often the coordinator looks at the situation and may ask Jev. */
+    intervalMs: z.number().int().min(500),
+    /** How long a focus directive holds before bots go back to their own choices. */
+    directiveTtlMs: z.number().int().min(500),
+    model: z.string().min(1),
+    timeoutMs: z.number().int().min(50),
+  }),
+});
+
 const serverSchema = z.object({
   host: z.string().min(1),
   port: z.number().int().min(1).max(65535),
   /** Mineflayer protocol version, or false to auto-detect. */
   version: z.union([z.string(), z.literal(false)]),
+  /** Wait this long between starting one bot and the next, so a server's login throttle is not tripped. */
+  staggerMs: z.number().int().min(0),
 });
 
 const debugSchema = z.object({
@@ -137,6 +162,7 @@ const botEntrySchema = z.object({
 const fileSchema = z.object({
   server: serverSchema,
   gateway: gatewaySchema,
+  swarm: swarmSchema,
   debug: debugSchema,
   defaults: agentSettingsSchema,
   bots: z.array(botEntrySchema).min(1),
@@ -157,6 +183,7 @@ export interface BotConfig extends AgentSettings {
 export interface Config {
   server: ConfigFile['server'];
   gateway: ConfigFile['gateway'];
+  swarm: ConfigFile['swarm'];
   debug: ConfigFile['debug'];
   bots: BotConfig[];
   jevApi: { apiKey?: string; baseURL?: string };
@@ -223,6 +250,7 @@ export function parseConfig(raw: unknown, env: NodeJS.ProcessEnv = {}): Config {
   return {
     server,
     gateway: file.gateway,
+    swarm: file.swarm,
     debug: file.debug,
     bots,
     jevApi: {

@@ -241,3 +241,42 @@ describe('protectedFor', () => {
     expect(protectedFor({ owner: undefined, protectedPlayers: ['Pal'] })).toEqual(['Pal']);
   });
 });
+
+describe('swarm and server stagger settings', () => {
+  it('has defaults: independent bots, started a second apart', () => {
+    const cfg = parseConfig(base());
+    expect(cfg.swarm).toEqual({
+      mode: 'independent',
+      claimTtlMs: 8000,
+      helpHp: 8,
+      helpAllies: true,
+      coordinator: { intervalMs: 4000, directiveTtlMs: 6000, model: 'jev-latest', timeoutMs: 1500 },
+    });
+    expect(cfg.server.staggerMs).toBe(1000);
+  });
+
+  it('accepts the three swarm modes and rejects anything else', () => {
+    for (const mode of ['independent', 'cooperative', 'coordinated']) {
+      const raw = base();
+      raw.swarm.mode = mode;
+      expect(parseConfig(raw).swarm.mode).toBe(mode);
+    }
+    const raw = base();
+    raw.swarm.mode = 'anarchy';
+    expect(() => parseConfig(raw)).toThrow(/Invalid config/);
+  });
+
+  it('rejects a claim lifetime that is too short to be useful', () => {
+    const raw = base();
+    raw.swarm.claimTtlMs = 100;
+    expect(() => parseConfig(raw)).toThrow(/Invalid config/);
+  });
+
+  it('protects every bot in the swarm from every other', () => {
+    const raw = base();
+    raw.bots = [{ username: 'One' }, { username: 'Two' }, { username: 'Three' }];
+    for (const bot of parseConfig(raw).bots) {
+      expect(bot.protectedPlayers.sort()).toEqual(['One', 'Three', 'Two']);
+    }
+  });
+});

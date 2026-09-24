@@ -80,6 +80,7 @@ describe('buildSnapshot', () => {
       kind: 'zombie',
       category: 'hostile',
       dist: 3.3,
+      position: { x: 0, y: 64, z: -3.3 },
       bearing: 'ahead',
       approaching: true,
       held: 'wooden_sword',

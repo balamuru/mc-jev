@@ -4,6 +4,7 @@ import { formatSnapshot } from '../perception/format.js';
 import type { Snapshot } from '../perception/types.js';
 import { decideByRules, threatsIn, type RuleSettings } from '../reflex/rules.js';
 import type { DecisionEntry, DecisionSink } from '../telemetry/decisionLog.js';
+import type { SwarmContext } from '../swarm/member.js';
 import type { JevGateway } from './gateway.js';
 import { decideWithJev, judgeHostilePlayers, type Thresholds } from './policy.js';
 import {
@@ -43,6 +44,8 @@ export interface StrategicDeps {
   apply: (intent: Intent, ttlMs: number) => void;
   /** Hand control back to the rules straight away. */
   clear: () => void;
+  /** The squad this bot belongs to, described to Jev. */
+  squad?: () => SwarmContext | null;
   /** Players Jev judged to be about to attack; the caller marks them hostile for a while. */
   onHostilePlayers?: (names: string[], ttlMs: number) => void;
   log: Logger;
@@ -163,13 +166,14 @@ export class StrategicLayer {
 
   private async decide(trigger: string, asked: Snapshot): Promise<void> {
     const { agentId, gateway, jev, rules } = this.deps;
+    const squad = this.deps.squad?.() ?? null;
     this.lastStartedAt = this.now();
     const outcome = await gateway.ask(
       agentId,
       {
         model: jev.model,
-        state: buildState(asked, rules.engageRadiusBlocks, rules),
-        questions: buildQuestions(asked, rules.engageRadiusBlocks, rules),
+        state: buildState(asked, rules.engageRadiusBlocks, rules, squad),
+        questions: buildQuestions(asked, rules.engageRadiusBlocks, rules, squad),
       },
       { timeoutMs: jev.timeoutMs, maxRetries: jev.maxRetries },
     );

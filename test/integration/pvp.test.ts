@@ -153,6 +153,7 @@ describe('player combat on a real server', () => {
     }
     expect(owner.health).toBe(before);
     expect(bot.logs.some((l) => l.includes(`fighting ${ownerName}`))).toBe(false);
-    expect(agent().intent.tactic).not.toBe('engage');
+    // It may still be dealing with the earlier rival, but never with its owner.
+    expect(agent().intent.reason).not.toContain(ownerName);
   });
 });

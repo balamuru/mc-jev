@@ -413,3 +413,22 @@ describe('StrategicLayer lifecycle', () => {
     expect(requests).toHaveLength(1);
   });
 });
+
+describe('StrategicLayer in a squad', () => {
+  it('describes the squad to Jev, and asks nothing about it when working alone', async () => {
+    const ctx = {
+      allies: [{ name: 'Bravo', role: 'fighter', hp: 15, distance_blocks: 5 }],
+      claims: [{ target: 't1', by: 'Bravo' }],
+      focus: null,
+    };
+    const withSquad = setup(undefined, { squad: () => ctx });
+    withSquad.layer.observe(snap(20, [mob(1, 5)]));
+    await flush();
+    expect(withSquad.requests[0]!.state).toMatchObject({ squad: ctx });
+
+    const alone = setup();
+    alone.layer.observe(snap(20, [mob(1, 5)]));
+    await flush();
+    expect(alone.requests[0]!.state).not.toHaveProperty('squad');
+  });
+});

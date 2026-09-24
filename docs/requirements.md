@@ -90,12 +90,22 @@ The API key is never logged.
 - **Failing retreat:** if the distance to the threat hasn't grown by `rules.retreatMinGainBlocks` within `rules.retreatCheckMs`, the bot fights back.
 - **Measured:** the survival benchmark reports survival rate per scenario, and its baseline and results are recorded in `docs/survival-benchmark.md`.
 
+### FR-10 Multiple bots
+
+- One process runs every bot in `bots[]`, each with its own username, role, owner, default mode, allies and setting overrides.
+- Bots start one at a time, `server.staggerMs` apart.
+- All bots share one Jev gateway, so the rate limit and daily budget apply to the whole process.
+- Each bot keeps its own state; none reads another's.
+
 ### FR-11 Swarm
 
-The shared data travels over a `Bus` and is collected on a `Blackboard`. There are two swarm modes:
+Bots share observations and target claims through a `Bus` and a `Blackboard` (`swarm.mode`):
 
-- **Cooperative:** each bot's Jev state includes its allies and the targets they have claimed.
-- **Coordinated:** an optional coordinator assigns roles and focus targets.
+- **independent** (default): bots ignore each other.
+- **cooperative:** bots claim targets so that they do not all pile onto one, help a hurt ally that was hit recently, and tell Jev about the squad.
+- **coordinated:** as cooperative, plus an optional coordinator that asks Jev which threat the whole squad should focus on. A bot never depends on it: without a current directive, it chooses for itself.
+
+The owner, allies and every other bot in the config are never attacked (see FR-7).
 
 ## Non-functional requirements
 

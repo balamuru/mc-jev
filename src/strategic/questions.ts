@@ -1,11 +1,12 @@
 import type { EntryType, Questions } from '@typesafe-ai/sdk';
 import type { EntitySummary, Snapshot } from '../perception/types.js';
 import { isProtectedPlayer } from '../reflex/protect.js';
+import type { SwarmContext } from '../swarm/member.js';
 import { NEUTRAL_MOBS, armorPoints } from '../reflex/danger.js';
 import type { JevAnswer } from './jev.js';
 
 /** Bump whenever a question or its wording changes: every logged decision records it. */
-export const QUESTION_SET_VERSION = 'v1';
+export const QUESTION_SET_VERSION = 'v2';
 
 /** At most this many threats are described to Jev, nearest first. */
 export const MAX_THREATS_IN_STATE = 6;
@@ -69,9 +70,11 @@ export function buildState(
   snapshot: Snapshot,
   radiusBlocks: number,
   rules?: PlayerRules,
+  squad?: SwarmContext | null,
 ): EntryType {
   const { self } = snapshot;
   return {
+    ...(squad ? { squad } : {}),
     self: {
       hp: self.hp,
       max_hp: 20,
@@ -107,6 +110,7 @@ export function buildQuestions(
   snapshot: Snapshot,
   radiusBlocks: number,
   rules?: PlayerRules,
+  squad?: SwarmContext | null,
 ): Questions {
   const threats = relevantThreats(snapshot, radiusBlocks, rules);
   const targets: Record<string, string> = {
@@ -141,7 +145,10 @@ export function buildQuestions(
       type: 'choice',
       instructions:
         'If the fighter attacks, which one of the `threats` should it attack first? ' +
-        'Prefer the one that is most dangerous or closest.',
+        'Prefer the one that is most dangerous or closest.' +
+        (squad
+          ? ' The fighter is part of a squad (`squad`): prefer a threat that no ally already attacks (`squad.claims`), and follow `squad.focus` if it is set.'
+          : ''),
       criteria: targets,
     },
     threat_level: {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Command } from '../src/control/commands.js';
 import {
   GUARD_LEASH_BLOCKS,
+  IN_MELEE_BLOCKS,
   GUARD_RETURN_BLOCKS,
   ModeController,
   WANDER_BLOCKS,
@@ -10,6 +11,7 @@ import {
 } from '../src/control/modes.js';
 import { IDLE, type Intent } from '../src/intent.js';
 import type { Snapshot } from '../src/perception/types.js';
+import type { SwarmView } from '../src/swarm/member.js';
 import { mob, rules, snap } from './fixtures.js';
 
 const cmd = (name: Command['name']): Command => ({ name, addressed: false });
@@ -245,5 +247,94 @@ describe('ModeController.decide: hunt', () => {
     setRand(0.25);
     const next = decide(world([], first)).position;
     expect(next).not.toEqual(first);
+  });
+});
+
+describe('ModeController in a squad', () => {
+  function squadMode(view: Partial<SwarmView> = {}, defaultMode: DefaultMode = 'guard') {
+    const swarm: SwarmView = {
+      claimedByOthers: () => new Set(),
+      focusTarget: () => null,
+      helpNeeded: () => null,
+      ...view,
+    };
+    const modes = new ModeController({
+      ownerName: 'Boss',
+      defaultMode,
+      rules,
+      huntRadiusBlocks: 24,
+      swarm,
+      rng: () => 0,
+      now: () => 0,
+    });
+    return { modes, decide: (s: Snapshot, prev: Intent = IDLE) => modes.decide(s, prev) };
+  }
+
+  it('fights the squad’s focus target, even when it is not the nearest', () => {
+    const { decide } = squadMode({ focusTarget: () => 2 });
+    const intent = decide(world([mob(1, 4), mob(2, 9)]));
+    expect(intent).toMatchObject({ tactic: 'engage', targetId: 2 });
+    expect(intent.reason).toContain('squad focus');
+  });
+
+  it('ignores a focus target it cannot see or fight', () => {
+    const { decide } = squadMode({ focusTarget: () => 99 });
+    expect(decide(world([mob(1, 4)]))).toMatchObject({ targetId: 1 });
+    expect(decide(world([mob(2, 9, { visible: false }), mob(1, 4)])).targetId).toBe(1);
+  });
+
+  it('moves to an unclaimed threat when the nearest one is taken', () => {
+    const { decide } = squadMode({ claimedByOthers: () => new Set([1]) });
+    const intent = decide(world([mob(1, 6), mob(2, 9)]));
+    expect(intent).toMatchObject({ tactic: 'engage', targetId: 2 });
+    expect(intent.reason).toContain('zombie is taken');
+  });
+
+  it('stays on a taken target when no other is available, or when already in melee with it', () => {
+    const taken = { claimedByOthers: () => new Set([1]) };
+    expect(squadMode(taken).decide(world([mob(1, 6)])).targetId).toBe(1);
+    expect(squadMode(taken).decide(world([mob(1, IN_MELEE_BLOCKS), mob(2, 9)])).targetId).toBe(1);
+  });
+
+  it('picks the nearest of several unclaimed threats', () => {
+    const { decide } = squadMode({ claimedByOthers: () => new Set([1]) });
+    expect(decide(world([mob(1, 5), mob(3, 12), mob(2, 8)])).targetId).toBe(2);
+  });
+
+  it('goes to help a hurt ally when it has nothing to fight', () => {
+    const help = { agent: 'Bravo', position: at(30, 64, 5), hp: 4 };
+    const { decide } = squadMode({ helpNeeded: () => help });
+    expect(decide(world([]))).toMatchObject({
+      tactic: 'goto',
+      position: help.position,
+      reason: 'going to help Bravo',
+    });
+  });
+
+  it('fights first and helps later', () => {
+    const help = { agent: 'Bravo', position: at(30, 64, 5), hp: 4 };
+    const { decide } = squadMode({ helpNeeded: () => help });
+    expect(decide(world([mob(1, 5)])).tactic).toBe('engage');
+  });
+
+  it('does not leave a guard post to help, and does not help while standing down', () => {
+    const help = { agent: 'Bravo', position: at(30, 64, 5), hp: 4 };
+    const { modes, decide } = squadMode({ helpNeeded: () => help });
+    modes.apply(cmd('guard'), at(0, 64, 0), null);
+    expect(decide(world([], at(0, 64, 0))).reason).toBe('holding my post');
+    modes.apply(cmd('stop'), at(0, 64, 0), null);
+    expect(decide(world([])).tactic).toBe('idle');
+  });
+
+  it('helps instead of wandering when hunting', () => {
+    const help = { agent: 'Bravo', position: at(30, 64, 5), hp: 4 };
+    const { modes, decide } = squadMode({ helpNeeded: () => help });
+    modes.apply(cmd('hunt'), at(0, 0, 0), null);
+    expect(decide(world([])).reason).toBe('going to help Bravo');
+  });
+
+  it('behaves exactly like a lone bot when there is no swarm', () => {
+    const lone = new ModeController({ defaultMode: 'guard', rules, huntRadiusBlocks: 24 });
+    expect(lone.decide(world([mob(1, 6), mob(2, 9)]), IDLE).targetId).toBe(1);
   });
 });

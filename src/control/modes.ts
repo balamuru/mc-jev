@@ -1,7 +1,8 @@
 import { IDLE, type Intent } from '../intent.js';
 import type { Snapshot, Vec3Like } from '../perception/types.js';
 import { distance } from '../perception/geometry.js';
-import { decideByRules, type RuleSettings } from '../reflex/rules.js';
+import { decideByRules, threatsIn, type RuleSettings } from '../reflex/rules.js';
+import type { SwarmView } from '../swarm/member.js';
 import { HELP_TEXT, type Command } from './commands.js';
 
 export type ModeName = 'guard' | 'hunt' | 'idle' | 'follow';
@@ -24,6 +25,8 @@ export const WANDER_BLOCKS = 15;
 /** ...and picks a new spot after this long, or on arrival. */
 export const WANDER_RETHINK_MS = 10_000;
 const ARRIVED_BLOCKS = 3;
+/** A bot this close to its target is already fighting it, so it will not switch to spare a claim. */
+export const IN_MELEE_BLOCKS = 3;
 
 export interface ModeOptions {
   /** The owner's Minecraft name, used to find them in the world. */
@@ -32,6 +35,9 @@ export interface ModeOptions {
   rules: RuleSettings;
   /** Hunters engage anything within this many blocks, rather than the usual engage radius. */
   huntRadiusBlocks: number;
+  /** The bot's link to the rest of the squad, when it is not working alone. */
+  swarm?: SwarmView;
+  /** HP at or below which an ally counts as needing help. Unused without a swarm. */
   rng?: () => number;
   now?: () => number;
 }
@@ -119,12 +125,54 @@ export class ModeController {
       case 'hunt':
         return this.decideHunt(snapshot, previous);
       default:
-        return decideByRules(snapshot, rules, previous);
+        return this.combat(snapshot, previous, rules);
     }
   }
 
+  /** Combat by the rules, adjusted for the squad: focus fire, and not piling onto a claimed target. */
+  private combat(snapshot: Snapshot, previous: Intent, rules = this.opts.rules): Intent {
+    return this.squadAdjusted(snapshot, decideByRules(snapshot, rules, previous), rules);
+  }
+
+  private squadAdjusted(snapshot: Snapshot, intent: Intent, rules: RuleSettings): Intent {
+    const swarm = this.opts.swarm;
+    if (!swarm || intent.tactic !== 'engage' || intent.targetId === undefined) return intent;
+    const threats = threatsIn(snapshot, rules);
+
+    const focus = swarm.focusTarget();
+    const focused = focus === null ? undefined : threats.find((e) => e.id === focus);
+    if (focused) {
+      return {
+        tactic: 'engage',
+        targetId: focused.id,
+        reason: `fighting ${focused.kind} (squad focus)`,
+      };
+    }
+
+    const taken = swarm.claimedByOthers();
+    const current = threats.find((e) => e.id === intent.targetId);
+    if (current && taken.has(current.id) && current.dist > IN_MELEE_BLOCKS) {
+      const free = threats.find((e) => !taken.has(e.id)); // nearest first
+      if (free) {
+        return {
+          tactic: 'engage',
+          targetId: free.id,
+          reason: `fighting ${free.kind} (${current.kind} is taken)`,
+        };
+      }
+    }
+    return intent;
+  }
+
+  /** With nothing to fight, go to an ally who is hurt and under attack. */
+  private helpIntent(snapshot: Snapshot): Intent | null {
+    const help = this.opts.swarm?.helpNeeded(snapshot.self.position);
+    if (!help) return null;
+    return { tactic: 'goto', position: help.position, reason: `going to help ${help.agent}` };
+  }
+
   private decideFollow(snapshot: Snapshot, previous: Intent): Intent {
-    const combat = decideByRules(snapshot, this.opts.rules, previous);
+    const combat = this.combat(snapshot, previous);
     if (combat.tactic !== 'idle') return combat;
     const owner = this.findOwner(snapshot);
     if (!owner) return { ...IDLE, reason: 'cannot see my owner' };
@@ -132,9 +180,9 @@ export class ModeController {
   }
 
   private decideGuard(snapshot: Snapshot, previous: Intent): Intent {
-    const combat = decideByRules(snapshot, this.opts.rules, previous);
+    const combat = this.combat(snapshot, previous);
     const anchor = this._mode.anchor;
-    if (!anchor) return combat;
+    if (!anchor) return combat.tactic === 'idle' ? (this.helpIntent(snapshot) ?? combat) : combat;
 
     const away = distance(snapshot.self.position, anchor);
     const leashed = away > GUARD_LEASH_BLOCKS;
@@ -151,12 +199,12 @@ export class ModeController {
 
   private decideHunt(snapshot: Snapshot, previous: Intent): Intent {
     const rules = { ...this.opts.rules, engageRadiusBlocks: this.opts.huntRadiusBlocks };
-    const combat = decideByRules(snapshot, rules, previous);
+    const combat = this.combat(snapshot, previous, rules);
     if (combat.tactic !== 'idle') {
       this.wander = null;
       return combat;
     }
-    return this.wanderIntent(snapshot);
+    return this.helpIntent(snapshot) ?? this.wanderIntent(snapshot);
   }
 
   /** Nothing to fight in sight: stroll to a random spot nearby to find something. */

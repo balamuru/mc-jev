@@ -131,28 +131,37 @@ These rules keep the bot from stalling while it waits for Jev:
 5. **Every failure has a fallback.** On timeout, error, rate limit, exhausted budget or low confidence, the rules decide. The reflex layer keeps following whatever intent it has.
 6. **Back-off and shut-off.** After a 429, a 5xx or a network failure the gateway pauses all calls for 5 seconds. A rejected key or an account with no credit stops Jev for the rest of the run, and the log says so once.
 
-## Several bots and swarms (Phase 6)
+## Several bots and swarms
 
 ```
-  BotAgent A ─┐                 ┌─► Blackboard (threats, claims, positions, roles)
-  BotAgent B ─┼─► Bus (typed) ──┤
-  BotAgent C ─┘                 └─► Coordinator (optional, no in-game body)
+  BotAgent A ─ SwarmMember ─┐              ┌─► Blackboard (allies, claims, threats, focus)
+  BotAgent B ─ SwarmMember ─┼─► Bus (JSON) ┤
+  BotAgent C ─ SwarmMember ─┘              └─► Coordinator (optional, no in-game body)
        │
        └──────► JevGateway (one per process: global rate limit + daily budget)
 ```
 
-- **No shared state between bots.** Each `BotAgent` owns its own Mineflayer bot, layers, mode and logger. `src/index.ts` starts one agent per entry in `config.bots[]`.
-- **One `JevGateway` per process.** Every bot calls Jev through it, so one rate limit and one daily budget cover all bots. Every call is tagged with the ID of the bot that made it.
-- **`Bus` interface.** It has two methods, `publish(topic, event)` and `subscribe(topic, handler)`, and its events are typed plain JSON. The first implementation, `InProcessBus`, is built on EventEmitter.
-- **Blackboard.** Built from bus events. It records the threats each bot has seen and which bot has claimed which target, and drops old entries.
-- **Modes:**
-  - **Independent:** bots ignore the bus.
-  - **Cooperative:** each bot's Jev request includes its allies and the targets they have claimed.
-  - **Coordinated:** an optional coordinator sends a periodic Jev request covering the whole blackboard and assigns roles and focus targets. If the coordinator is slow or down, the bots keep acting on their own.
+`buildApp` (`src/app.ts`) assembles all of this from the config: one `BotAgent` per entry in `bots[]`, one gateway, one bus, one blackboard and, in `coordinated` mode, one coordinator. Bots are started one at a time, `server.staggerMs` apart (the first immediately), so a server's login throttle is not tripped.
+
+- **No shared state between bots.** Each `BotAgent` owns its own Mineflayer bot, layers, mode and logger.
+- **One `JevGateway` per process.** Every bot calls Jev through it, so one rate limit and one daily budget cover all bots, and each bot has at most one call in flight.
+- **`Bus`** (`src/swarm/bus.ts`): `publish(event)` and `subscribe(type | '*', handler)`. Events (`src/swarm/events.ts`) are plain JSON: `heartbeat`, `threats`, `damaged`, `claim`, `release`, `died`, `left` and `directive`. The first implementation, `InProcessBus`, delivers synchronously and isolates handler errors.
+- **`Blackboard`** (`src/swarm/blackboard.ts`): built from bus events. It knows which bots are alive (a bot that stops reporting for 10 seconds is dropped), which hostiles anyone has seen, who has claimed which target (first claim wins, and a claim lapses after `swarm.claimTtlMs` without being refreshed or when its owner dies), and the coordinator's current focus.
+- **`SwarmMember`** (`src/swarm/member.ts`): one bot's link to the swarm. Each reflex step it reports the bot's position, HP, visible hostiles, damage and target, and it answers three questions for the bot's decisions: which targets are taken, what is the squad's focus, and who needs help.
+
+### Swarm modes (`swarm.mode`)
+
+| Mode          | What happens                                                                                                                                                                                                                                                                                                                                            |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `independent` | The default. Bots ignore each other and the bus. Same as running separate bots.                                                                                                                                                                                                                                                                         |
+| `cooperative` | Bots claim the target they fight. A bot whose nearest target is taken moves to the nearest free one (unless it is already in melee with it or nothing else is free). A bot with nothing to fight goes to help an ally that is hurt (at or below `swarm.helpHp`) and was hit in the last 5 seconds. Jev is told about the squad and asked to spread out. |
+| `coordinated` | As cooperative, plus a coordinator: every `swarm.coordinator.intervalMs`, when the squad has at least two bots and two known threats, it asks Jev which one threat everybody should focus on and broadcasts a directive that lasts `directiveTtlMs`. If the coordinator is slow, unsure or down, the directive lapses and every bot chooses for itself. |
+
+Roles (`bots[].role`) are labels shared with the squad and shown to Jev; they do not change what a bot does yet.
 
 ### When to use a network event system
 
-One Node process can run roughly 10–20 bots, so a bus inside the process is enough for now. Bus events are designed to serialize as plain JSON, so the transport can be swapped later without changing bot code.
+One Node process should manage roughly 10–20 bots (not measured), so a bus inside the process is enough for now. Bus events are designed to serialize as plain JSON, so the transport can be swapped later without changing bot code.
 
 | Need                                             | Transport                         |
 | ------------------------------------------------ | --------------------------------- |

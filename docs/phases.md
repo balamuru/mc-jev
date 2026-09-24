@@ -2,17 +2,17 @@
 
 Each phase ends with `npm run check` passing, the phase's integration scenario working where there is one, the docs updated, and a commit you have approved.
 
-| Phase | Scope                                         | Requirements     | Status  |
-| ----- | --------------------------------------------- | ---------------- | ------- |
-| 0     | Repo and scaffolding                          | FR-9             | Done    |
-| 1     | Server, connection and perception             | FR-1, FR-2       | Done    |
-| 2     | Reflex layer: rules-only fighter against mobs | FR-3             | Done    |
-| 2.5   | Survival hardening                            | FR-12            | Done    |
-| 3     | Jev strategic layer against mobs              | FR-4, FR-5, FR-8 | Done    |
-| 4     | Modes and chat commands                       | FR-6             | Done    |
-| 5     | Player combat                                 | FR-7             | Done    |
-| 6     | Multiple bots and swarm                       | FR-10, FR-11     | Planned |
-| 7     | Tuning (optional)                             | none             | Planned |
+| Phase | Scope                                         | Requirements     | Status |
+| ----- | --------------------------------------------- | ---------------- | ------ |
+| 0     | Repo and scaffolding                          | FR-9             | Done   |
+| 1     | Server, connection and perception             | FR-1, FR-2       | Done   |
+| 2     | Reflex layer: rules-only fighter against mobs | FR-3             | Done   |
+| 2.5   | Survival hardening                            | FR-12            | Done   |
+| 3     | Jev strategic layer against mobs              | FR-4, FR-5, FR-8 | Done   |
+| 4     | Modes and chat commands                       | FR-6             | Done   |
+| 5     | Player combat                                 | FR-7             | Done   |
+| 6     | Multiple bots and swarm                       | FR-10, FR-11     | Done   |
+| 7     | Tuning (optional)                             | none             | Next   |
 
 ## Phase 0: Repo and scaffolding
 
@@ -85,14 +85,13 @@ The rules-only fighter could die while retreating: auto-eat made it stop and eat
 
 ## Phase 6: Multiple bots and swarm
 
-- **Agents:** run N agents from `bots[]`.
-- **`swarm/bus.ts`:** the `Bus` interface and `InProcessBus`.
-- **`swarm/blackboard.ts`:** threats seen by any bot, target claims, positions and roles.
-- **Cooperative mode:** each bot's Jev state includes its allies and their claimed targets.
-- **`swarm/coordinator.ts`:** optional. Assigns roles and focus targets.
-- **Tests:**
-  - Unit tests for the bus and blackboard, covering claim conflicts and stale threats.
-  - An integration test in which a squad of 3 bots fights a mob wave.
+- **`buildApp`** assembles the program: one agent per bot, one shared gateway, one bus and blackboard, an optional coordinator, and staggered starts.
+- **`swarm/bus.ts`, `swarm/events.ts`:** the `Bus` interface and `InProcessBus`, with JSON events.
+- **`swarm/blackboard.ts`:** allies, target claims (first wins, with expiry), known threats, help requests and the coordinator's focus.
+- **`swarm/member.ts`:** each bot's reporting and its view of the squad.
+- **Cooperative behavior** in the mode logic: focus fire, avoiding claimed targets, helping a hurt ally. Jev is told about the squad (question set v2).
+- **`swarm/coordinator.ts`:** the optional coordinator, asking Jev for a squad focus target.
+- **Tests:** unit tests for every piece; agent tests with real bus and blackboard; `buildApp` tests for staggering, the shared limit and the modes; and an integration test in which a squad of three bots beats a wave of six zombies on a real server, holding different targets at the same time, with nobody lost.
 
 ## Phase 7: Tuning (optional)
 

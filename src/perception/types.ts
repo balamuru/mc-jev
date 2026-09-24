@@ -77,6 +77,8 @@ export interface EntitySummary {
   category: EntityCategory;
   /** Blocks, one decimal. */
   dist: number;
+  /** Where it is in the world, one decimal. Lets bots share what they see. */
+  position: Vec3Like;
   bearing: Bearing;
   approaching: boolean;
   held: string | null;

@@ -246,3 +246,32 @@ describe('players in the state and questions', () => {
     expect(parseJudgment(a)?.players).toEqual([{ id: 11, hostile: 0.9 }]);
   });
 });
+
+describe('squad in the state and questions', () => {
+  const squad = {
+    allies: [{ name: 'Bravo', role: 'fighter', hp: 12, distance_blocks: 6.5 }],
+    claims: [{ target: 't5', by: 'Bravo' }],
+    focus: 't6',
+  };
+  const s = snap(20, [mob(5, 4), mob(6, 8)]);
+
+  it('adds the squad to the state only when the bot is in one', () => {
+    expect(buildState(s, 16, undefined, squad)).toMatchObject({ squad });
+    expect(buildState(s, 16)).not.toHaveProperty('squad');
+    expect(buildState(s, 16, undefined, null)).not.toHaveProperty('squad');
+  });
+
+  it('tells Jev to spread out and follow the focus, but only for squad members', () => {
+    const withSquad = buildQuestions(s, 16, undefined, squad) as unknown as {
+      target: { instructions: string };
+    };
+    expect(withSquad.target.instructions).toContain('squad.claims');
+    expect(withSquad.target.instructions).toContain('squad.focus');
+    const alone = buildQuestions(s, 16) as unknown as { target: { instructions: string } };
+    expect(alone.target.instructions).not.toContain('squad');
+  });
+
+  it('is version v2', () => {
+    expect(QUESTION_SET_VERSION).toBe('v2');
+  });
+});

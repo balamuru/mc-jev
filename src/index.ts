@@ -1,10 +1,6 @@
 import { config as loadEnv } from 'dotenv';
-import { BotAgent } from './agent/BotAgent.js';
+import { buildApp } from './app.js';
 import { GAME_TICK_MS, loadConfig } from './config.js';
-import { formatSnapshot } from './perception/format.js';
-import { JevGateway } from './strategic/gateway.js';
-import { createJevClient } from './strategic/jev.js';
-import { JsonlDecisionLog } from './telemetry/decisionLog.js';
 
 loadEnv({ quiet: true });
 
@@ -19,40 +15,24 @@ console.log(
 );
 for (const bot of config.bots) {
   console.log(
-    `bot ${bot.username} (${bot.role}): reflex every ${bot.reflex.everyTicks * GAME_TICK_MS}ms,` +
+    `bot ${bot.username} (${bot.role}, ${bot.mode}): reflex every ${bot.reflex.everyTicks * GAME_TICK_MS}ms,` +
       ` strategic ${bot.strategic.enabled ? `every ${bot.strategic.intervalMs}ms` : 'off'},` +
       ` Jev timeout ${bot.jev.timeoutMs}ms`,
   );
 }
+if (config.bots.length > 1) {
+  console.log(
+    `swarm: ${config.swarm.mode}, ${config.bots.length} bots, started ${config.server.staggerMs}ms apart`,
+  );
+}
 
-const gateway = new JevGateway({
-  client: apiKey ? createJevClient({ apiKey, baseURL }) : null,
-  limits: config.gateway,
-});
-const decisions = config.debug.decisionLogDir
-  ? new JsonlDecisionLog(config.debug.decisionLogDir, (m) => console.error(m))
-  : undefined;
-
-const agents = config.bots.map(
-  (bot) =>
-    new BotAgent(bot, config.server, {
-      gateway,
-      decisions,
-      snapshotIntervalMs: config.debug.snapshotIntervalMs,
-      onSnapshot: (snapshot, agent) =>
-        console.log(`[${agent.config.username}] ${formatSnapshot(snapshot)}`),
-    }),
-);
-agents.forEach((agent) => agent.start());
+const app = buildApp(config);
+app.start();
 
 function shutdown(): void {
   console.log('\nshutting down');
-  agents.forEach((agent) => agent.stop());
-  const s = gateway.stats();
-  console.log(
-    `Jev: ${s.calls} calls, ${s.failures} failed, $${s.costUsd.toFixed(5)} spent` +
-      (s.disabledReason ? ` (disabled: ${s.disabledReason})` : ''),
-  );
+  app.stop();
+  console.log(app.usageSummary());
   process.exit(0);
 }
 process.on('SIGINT', shutdown);

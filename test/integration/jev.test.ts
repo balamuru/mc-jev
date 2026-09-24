@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs';
-import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, onTestFailed } from 'vitest';
 import { BotAgent } from '../../src/agent/BotAgent.js';
 import { parseConfig } from '../../src/config.js';
 import { JevGateway } from '../../src/strategic/gateway.js';
 import { JevError, type JevAnswer } from '../../src/strategic/jev.js';
+import { QUESTION_SET_VERSION } from '../../src/strategic/questions.js';
 import type { DecisionEntry } from '../../src/telemetry/decisionLog.js';
 import { answers, scriptedClient } from '../jevFixtures.js';
 import { botDefaults, botName, calmNight, waitFor } from './helpers.js';
@@ -32,7 +33,7 @@ beforeAll(async () => {
   });
   agent = new BotAgent(
     { ...base.bots[0]!, username: name, rules: { ...botDefaults.rules, retreat: true } },
-    { host: server.host, port: server.port, version: false },
+    { host: server.host, port: server.port, version: false, staggerMs: 0 },
     {
       gateway,
       decisions: { write: (e) => void entries.push(e) },
@@ -47,6 +48,11 @@ beforeAll(async () => {
   }
   await waitFor(() => agent.snapshot()?.self.armor.length === 4, 10_000, 'armor to be worn');
 }, 180_000);
+
+// Whatever a test did, leave no zombies for the next one.
+afterEach(async () => {
+  await server.run('kill @e[type=zombie]', 150);
+});
 
 afterAll(async () => {
   agent?.stop();
@@ -64,7 +70,11 @@ describe('Jev decisions in a real game', () => {
 
     await waitFor(() => agent.intent.tactic === 'retreat', 10_000, 'the bot to retreat');
     expect(agent.intent.reason).toContain('jev: retreat');
-    expect(entries[0]).toMatchObject({ outcome: 'applied', agent: name, questionSet: 'v1' });
+    expect(entries[0]).toMatchObject({
+      outcome: 'applied',
+      agent: name,
+      questionSet: QUESTION_SET_VERSION,
+    });
     expect(entries[0]!.costUsd).toBeGreaterThan(0);
     await server.run('kill @e[type=zombie]');
     await waitFor(() => agent.intent.tactic === 'idle', 15_000, 'the bot to calm down');

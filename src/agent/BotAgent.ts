@@ -12,6 +12,9 @@ import { GAME_TICK_MS } from '../config.js';
 import type { JevGateway } from '../strategic/gateway.js';
 import { StrategicLayer } from '../strategic/layer.js';
 import type { DecisionSink } from '../telemetry/decisionLog.js';
+import type { Blackboard } from '../swarm/blackboard.js';
+import type { Bus } from '../swarm/bus.js';
+import { SwarmMember, type SwarmMode } from '../swarm/member.js';
 import { MineflayerActuator, attachPlugins } from './actuator.js';
 import { backoffDelayMs, type BackoffOptions } from './backoff.js';
 import { readSnapshot, type BotLike } from './mineflayerAdapter.js';
@@ -30,6 +33,14 @@ export interface AgentOptions {
   gateway?: JevGateway;
   /** Where Jev decisions are recorded. */
   decisions?: DecisionSink;
+  /** Link to the rest of the squad. Without it (or in `independent` mode) the bot works alone. */
+  swarm?: {
+    mode: SwarmMode;
+    bus: Bus;
+    board: Blackboard;
+    helpHp: number;
+    helpAllies: boolean;
+  };
   /** Bot factory, replaceable in tests. */
   createBot?: (server: Config['server'], config: BotConfig) => BotHandle;
 }
@@ -73,6 +84,7 @@ export class BotAgent {
   private reflex: ReflexLoop | null = null;
   private strategic: StrategicLayer | null = null;
   private modes: ModeController | null = null;
+  private member: SwarmMember | null = null;
   private readonly provocation = new ProvocationTracker();
   private _deaths = 0;
   private attempt = 0;
@@ -194,7 +206,22 @@ export class BotAgent {
     if (!this.config.reflex.enabled) return;
     const { gateway } = this.options;
     const rules = { ...this.config.rules, protectedPlayers: protectedFor(this.config) };
+    const swarm = this.options.swarm;
+    const member =
+      swarm && swarm.mode !== 'independent'
+        ? new SwarmMember({
+            agent: this.config.username,
+            role: this.config.role,
+            mode: swarm.mode,
+            bus: swarm.bus,
+            board: swarm.board,
+            helpHp: swarm.helpHp,
+            helpAllies: swarm.helpAllies,
+          })
+        : null;
+    this.member = member;
     const modes = new ModeController({
+      swarm: member ?? undefined,
       ownerName: this.config.owner,
       defaultMode: this.config.mode,
       rules,
@@ -215,6 +242,7 @@ export class BotAgent {
             },
             currentIntent: () => this.intent,
             active: () => !modes.standingDown,
+            squad: () => member?.context() ?? null,
             apply: (intent, ttlMs) => reflex.setOverride(intent, Math.ceil(ttlMs / GAME_TICK_MS)),
             clear: () => reflex.clearOverride(),
             log: this.log,
@@ -227,7 +255,10 @@ export class BotAgent {
       rules,
       read: () => {
         const snapshot = this.snapshot();
-        if (snapshot) strategic?.observe(snapshot);
+        if (snapshot) {
+          strategic?.observe(snapshot);
+          member?.observe(snapshot, reflex.intent);
+        }
         return snapshot;
       },
       actuator,
@@ -249,6 +280,7 @@ export class BotAgent {
     bot.on('death', () => {
       reflex.dispose();
       strategic?.reset();
+      member?.died();
       this.provocation.reset();
     });
   }
@@ -300,6 +332,8 @@ export class BotAgent {
 
   private stopReflex(): void {
     this.modes = null;
+    this.member?.dispose();
+    this.member = null;
     this.provocation.reset();
     this.strategic?.stop();
     this.strategic = null;

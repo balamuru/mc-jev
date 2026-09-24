@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Phases 0-5 are done: scaffolding and config, connection and perception, the rules-based reflex layer, survival hardening, the Jev strategic layer, modes with owner chat commands, and player combat. Next is Phase 6 (multiple bots and swarms), then Phase 7 (tuning). `docs/phases.md` is the source of truth for scope and status, and `docs/requirements.md` lists the functional requirements (FR-1 to FR-12).
+Phases 0-6 are done: scaffolding and config, connection and perception, the rules-based reflex layer, survival hardening, the Jev strategic layer, modes with owner chat commands, and player combat, and multiple bots with swarms. Next is Phase 7 (tuning). `docs/phases.md` is the source of truth for scope and status, and `docs/requirements.md` lists the functional requirements (FR-1 to FR-12).
 
 ## Commands
 
@@ -37,6 +37,7 @@ The full write-up is in `docs/architecture.md`. The parts that need reading acro
 - **Who decides each reflex step:** a fight-back after a failed retreat, else Jev's override (`ReflexLoop.setOverride`), else the current mode (`ModeController` in `src/control/modes.ts`, which uses the rules for combat). Intents are `idle`, `engage`, `retreat`, `follow` and `goto`.
 - **Strategic layer** (`src/strategic/`): `layer.ts` schedules and applies decisions, `gateway.ts` is the shared limiter (rate, daily budget, cooldowns, one call per bot), `jev.ts` wraps the SDK, `questions.ts` builds the versioned question set, `policy.ts` merges Jev with the rules (Jev can add caution freely, but cannot remove it at critical HP). Every decision goes to `logs/decisions-*.jsonl`.
 - **Player combat.** A player is a threat only after attacking the bot (`src/perception/provocation.ts`) or when Jev is very sure and they are armed and close. The owner, `allies` and other configured bots are never attacked: `isProtectedPlayer` is enforced in the rules, in Jev's target list and in the actuator, and `protectedFor(config)` always adds the owner. Do not build a `BotConfig` by hand without going through it.
+- **Swarm** (`src/swarm/`): `buildApp` (`src/app.ts`) assembles everything. Bots share a `Bus` (JSON events, in-process so NATS can replace it) and a `Blackboard` (allies, first-wins claims with expiry, known threats, coordinator focus); each bot has a `SwarmMember`. `ModeController` uses it for focus fire, avoiding claimed targets and helping hurt allies. `swarm.mode: independent` (default) makes bots ignore all of it. The coordinator only issues time-limited focus directives, so bots never depend on it.
 - **Chat commands** (`src/control/commands.ts`): exact-match, owner-only. The owner is looked up directly through `bot.players` so following works beyond the perception radius.
 - **No `mineflayer-pvp`.** It is unmaintained and relies on the deprecated `physicTick` event, so combat (aim, reach check, weapon cooldown) is our own code in `MineflayerActuator`. Pathfinder, auto-eat and armor-manager are used; armor-manager only reacts to picked-up items, so `attachPlugins` also re-checks armor when an armor item enters the inventory.
 - **`mineflayer-pathfinder` is loaded with `createRequire`** because Node's ESM loader does not expose its `goals` export.

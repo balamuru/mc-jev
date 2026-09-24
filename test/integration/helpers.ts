@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { BotAgent, type Logger } from '../../src/agent/BotAgent.js';
+import { BotAgent, type AgentOptions, type Logger } from '../../src/agent/BotAgent.js';
 import { type BotConfig, parseConfig } from '../../src/config.js';
 import type { TestServer } from './serverHarness.js';
 
@@ -38,6 +38,7 @@ export function makeAgent(
   server: TestServer,
   username: string,
   overrides: Partial<BotConfig> = {},
+  extra: Partial<AgentOptions> = {},
 ): TestAgent {
   const logs: string[] = [];
   const logger: Logger = {
@@ -48,8 +49,8 @@ export function makeAgent(
   const template = baseConfig.bots[0]!;
   const agent = new BotAgent(
     { ...template, ...overrides, username },
-    { host: server.host, port: server.port, version: false },
-    { logger },
+    { host: server.host, port: server.port, version: false, staggerMs: 0 },
+    { logger, ...extra },
   );
   return { agent, logs };
 }

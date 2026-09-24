@@ -2,11 +2,24 @@
   "server": {
     "host": "localhost",
     "port": 25565,
-    "version": false
+    "version": false,
+    "staggerMs": 1000
   },
   "gateway": {
     "maxCallsPerMinute": 60,
     "dailyBudgetUsd": 1.0
+  },
+  "swarm": {
+    "mode": "independent",
+    "claimTtlMs": 8000,
+    "helpHp": 8,
+    "helpAllies": true,
+    "coordinator": {
+      "intervalMs": 4000,
+      "directiveTtlMs": 6000,
+      "model": "jev-latest",
+      "timeoutMs": 1500
+    }
   },
   "debug": {
     "snapshotIntervalMs": 1000,

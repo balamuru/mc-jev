@@ -3,6 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BotAgent, type Logger } from '../src/agent/BotAgent.js';
 import { parseConfig } from '../src/config.js';
 import { JevGateway } from '../src/strategic/gateway.js';
+import { Blackboard } from '../src/swarm/blackboard.js';
+import { InProcessBus } from '../src/swarm/bus.js';
+import type { SwarmMode } from '../src/swarm/member.js';
 import type { DecisionEntry } from '../src/telemetry/decisionLog.js';
 import { answers, scriptedClient } from './jevFixtures.js';
 import { FakeActuator, FakeBot } from './fakeBot.js';
@@ -770,5 +773,133 @@ describe('BotAgent judging players with Jev', () => {
     await vi.advanceTimersByTimeAsync(300);
     bots[0]!.emit('physicsTick');
     expect(agent.intent.tactic).toBe('idle');
+  });
+});
+
+describe('BotAgent in a squad', () => {
+  function squad(mode: SwarmMode) {
+    const bus = new InProcessBus();
+    const board = new Blackboard(bus, { claimTtlMs: 8000 });
+    const make = (name: string) => {
+      const bots: FakeBot[] = [];
+      const actuators: FakeActuator[] = [];
+      const cfg = { ...botConfig, username: name };
+      const agent = new BotAgent(cfg, config.server, {
+        logger: { info() {}, warn() {}, error() {} },
+        swarm: { mode, bus, board, helpHp: 8, helpAllies: true },
+        createBot: () => {
+          const b = new FakeBot();
+          bots.push(b);
+          const actuator = new FakeActuator();
+          actuators.push(actuator);
+          return { bot: b, actuator };
+        },
+      });
+      agent.start();
+      bots[0]!.equipIron().emit('spawn');
+      return { agent, bot: bots[0]!, actuator: actuators[0]! };
+    };
+    return { bus, board, make };
+  }
+  const twoZombies = (b: FakeBot) => {
+    b.entities['1'] = zombieAt(1, -5);
+    b.entities['2'] = zombieAt(2, -9);
+  };
+
+  it('spreads two bots over two threats instead of piling onto one', () => {
+    const { make, board } = squad('cooperative');
+    const a = make('Alpha');
+    const b = make('Bravo');
+    twoZombies(a.bot);
+    twoZombies(b.bot);
+    a.bot.emit('physicsTick'); // Alpha takes the nearer zombie
+    a.bot.emit('physicsTick');
+    b.bot.emit('physicsTick'); // Bravo sees it is taken
+    b.bot.emit('physicsTick');
+    expect(a.agent.intent).toMatchObject({ tactic: 'engage', targetId: 1 });
+    expect(b.agent.intent).toMatchObject({ tactic: 'engage', targetId: 2 });
+    expect(
+      board
+        .liveClaims()
+        .map((c) => [c.agent, c.targetId])
+        .sort(),
+    ).toEqual([
+      ['Alpha', 1],
+      ['Bravo', 2],
+    ]);
+  });
+
+  it('lets independent bots choose the same target, as before', () => {
+    const { make } = squad('independent');
+    const a = make('Alpha');
+    const b = make('Bravo');
+    twoZombies(a.bot);
+    twoZombies(b.bot);
+    for (const x of [a, b]) {
+      x.bot.emit('physicsTick');
+      x.bot.emit('physicsTick');
+    }
+    expect(a.agent.intent.targetId).toBe(1);
+    expect(b.agent.intent.targetId).toBe(1);
+  });
+
+  it('frees its claims when it dies, so an ally can take the target', () => {
+    const { make, board } = squad('cooperative');
+    const a = make('Alpha');
+    const b = make('Bravo');
+    twoZombies(a.bot);
+    twoZombies(b.bot);
+    a.bot.emit('physicsTick');
+    a.bot.emit('physicsTick');
+    expect(board.liveClaims()).toHaveLength(1);
+    a.bot.emit('death');
+    expect(board.liveClaims()).toEqual([]);
+    b.bot.emit('physicsTick');
+    b.bot.emit('physicsTick');
+    expect(b.agent.intent.targetId).toBe(1);
+  });
+
+  it('leaves the swarm when it disconnects', () => {
+    const { make, board } = squad('cooperative');
+    const a = make('Alpha');
+    twoZombies(a.bot);
+    a.bot.emit('physicsTick');
+    a.bot.emit('physicsTick');
+    expect(board.allAllies().map((x) => x.agent)).toEqual(['Alpha']);
+    a.bot.emit('end');
+    expect(board.allAllies()).toEqual([]);
+  });
+
+  it('follows the coordinator’s focus in coordinated mode', () => {
+    const { make, bus } = squad('coordinated');
+    const a = make('Alpha');
+    twoZombies(a.bot);
+    a.bot.emit('physicsTick');
+    expect(a.agent.intent.targetId).toBe(1);
+    bus.publish({ type: 'directive', at: Date.now(), ttlMs: 6000, focusTargetId: 2 });
+    a.bot.emit('physicsTick');
+    expect(a.agent.intent).toMatchObject({ tactic: 'engage', targetId: 2 });
+    expect(a.agent.intent.reason).toContain('squad focus');
+  });
+
+  it('goes to help a hurt ally that is under attack', () => {
+    const { make, bus } = squad('cooperative');
+    const a = make('Alpha');
+    a.bot.emit('physicsTick'); // announces itself
+    bus.publish({
+      type: 'heartbeat',
+      agent: 'Bravo',
+      at: Date.now(),
+      role: 'fighter',
+      position: { x: 20, y: 64, z: 0 },
+      hp: 4,
+    });
+    bus.publish({ type: 'damaged', agent: 'Bravo', at: Date.now(), hp: 4 });
+    a.bot.emit('physicsTick');
+    expect(a.agent.intent).toMatchObject({
+      tactic: 'goto',
+      position: { x: 20, y: 64, z: 0 },
+      reason: 'going to help Bravo',
+    });
   });
 });

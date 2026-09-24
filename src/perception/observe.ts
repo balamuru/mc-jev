@@ -68,6 +68,7 @@ function summarize(
       ? { provoked: input.hostilePlayers?.has(kind.toLowerCase()) ?? false }
       : {}),
     dist: round1(dist),
+    position: { x: round1(e.position.x), y: round1(e.position.y), z: round1(e.position.z) },
     bearing: bearingLabel(rel),
     approaching: isApproaching(e.position, e.velocity, self.position),
     held: itemName(e.heldItem),

@@ -36,6 +36,7 @@ export const mob = (
   kind: 'zombie',
   category: 'hostile',
   dist,
+  position: { x: 0, y: 64, z: -dist },
   bearing: 'ahead',
   approaching: true,
   held: null,
