@@ -1,17 +1,20 @@
 import { createBot } from 'mineflayer';
 import type { BotConfig, Config } from '../config.js';
+import { isAuthorized, parseChat } from '../control/commands.js';
+import { ModeController, type Mode } from '../control/modes.js';
 import { IDLE, type Intent } from '../intent.js';
+import type { Logger } from '../logger.js';
 import type { Snapshot } from '../perception/types.js';
 import { ReflexLoop, type Actuator } from '../reflex/loop.js';
+import { GAME_TICK_MS } from '../config.js';
+import type { JevGateway } from '../strategic/gateway.js';
+import { StrategicLayer } from '../strategic/layer.js';
+import type { DecisionSink } from '../telemetry/decisionLog.js';
 import { MineflayerActuator, attachPlugins } from './actuator.js';
 import { backoffDelayMs, type BackoffOptions } from './backoff.js';
 import { readSnapshot, type BotLike } from './mineflayerAdapter.js';
 
-export interface Logger {
-  info(msg: string): void;
-  warn(msg: string): void;
-  error(msg: string): void;
-}
+export type { Logger };
 
 export type AgentState = 'idle' | 'connecting' | 'online' | 'reconnecting' | 'stopped';
 
@@ -21,6 +24,10 @@ export interface AgentOptions {
   onSnapshot?: (snapshot: Snapshot, agent: BotAgent) => void;
   logger?: Logger;
   reconnect?: BackoffOptions;
+  /** Shared Jev gateway. Without one, the bot runs on rules only. */
+  gateway?: JevGateway;
+  /** Where Jev decisions are recorded. */
+  decisions?: DecisionSink;
   /** Bot factory, replaceable in tests. */
   createBot?: (server: Config['server'], config: BotConfig) => BotHandle;
 }
@@ -59,6 +66,9 @@ export class BotAgent {
   private _state: AgentState = 'idle';
   private bot: BotLike | null = null;
   private reflex: ReflexLoop | null = null;
+  private strategic: StrategicLayer | null = null;
+  private modes: ModeController | null = null;
+  private _deaths = 0;
   private attempt = 0;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private snapshotTimer: NodeJS.Timeout | null = null;
@@ -99,12 +109,21 @@ export class BotAgent {
     this.clearTimers();
     const bot = this.bot;
     this.bot = null;
-    this.reflex?.dispose();
-    this.reflex = null;
+    this.stopReflex();
     bot?.removeAllListeners();
     // Swallow late errors from a bot we no longer track.
     bot?.on('error', () => {});
     bot?.quit('shutting down');
+  }
+
+  /** How many times this bot has died since the agent was created. */
+  get deaths(): number {
+    return this._deaths;
+  }
+
+  /** The bot's current high-level order: guarding, hunting, following or standing down. */
+  get mode(): Mode {
+    return this.modes?.mode ?? { name: this.config.mode };
   }
 
   /** What the bot is currently trying to do. */
@@ -115,7 +134,7 @@ export class BotAgent {
   /** Latest snapshot, or null when not spawned. */
   snapshot(): Snapshot | null {
     if (!this.bot || this._state !== 'online') return null;
-    return readSnapshot(this.bot, this.config.perception);
+    return readSnapshot(this.bot, this.config.perception, Date.now(), this.config.owner);
   }
 
   private connect(): void {
@@ -131,6 +150,9 @@ export class BotAgent {
       return;
     }
     this.bot = bot;
+    bot.on('death', () => {
+      this._deaths++;
+    });
     this.startReflex(bot, actuator);
 
     bot.on('spawn', () => {
@@ -150,27 +172,87 @@ export class BotAgent {
       if (this.bot !== bot) return;
       this.log.warn(`disconnected${reason ? ` (${String(reason)})` : ''}`);
       this.bot = null;
-      this.reflex?.dispose();
-      this.reflex = null;
+      this.stopReflex();
       this.scheduleReconnect();
     });
   }
 
   private startReflex(bot: BotLike, actuator: Actuator): void {
     if (!this.config.reflex.enabled) return;
-    const reflex = new ReflexLoop({
+    const { gateway } = this.options;
+    const modes = new ModeController({
+      ownerName: this.config.owner,
+      defaultMode: this.config.mode,
+      rules: this.config.rules,
+      huntRadiusBlocks: this.config.perception.radiusBlocks,
+    });
+    this.modes = modes;
+    const strategic =
+      gateway && this.config.strategic.enabled
+        ? new StrategicLayer({
+            agentId: this.config.username,
+            strategic: this.config.strategic,
+            jev: this.config.jev,
+            rules: this.config.rules,
+            gateway,
+            currentIntent: () => this.intent,
+            active: () => !modes.standingDown,
+            apply: (intent, ttlMs) => reflex.setOverride(intent, Math.ceil(ttlMs / GAME_TICK_MS)),
+            clear: () => reflex.clearOverride(),
+            log: this.log,
+            decisions: this.options.decisions,
+          })
+        : null;
+
+    const reflex: ReflexLoop = new ReflexLoop({
       everyTicks: this.config.reflex.everyTicks,
       rules: this.config.rules,
-      read: () => this.snapshot(),
+      read: () => {
+        const snapshot = this.snapshot();
+        if (snapshot) strategic?.observe(snapshot);
+        return snapshot;
+      },
       actuator,
+      decide: (snapshot, previous) => modes.decide(snapshot, previous),
       onIntent: (next, prev) =>
         this.log.info(`intent ${prev.tactic} -> ${next.tactic}: ${next.reason}`),
       onError: (err) => this.log.error(`reflex error: ${errorMessage(err)}`),
     });
     this.reflex = reflex;
+    this.strategic = strategic;
+    strategic?.start();
     bot.on('physicsTick', () => reflex.onTick());
+    const onChat = (username: string, message: string) =>
+      this.handleChat(bot, reflex, username, message);
+    bot.on('chat', onChat);
+    bot.on('whisper', onChat);
     // After dying the bot respawns with a clean slate.
-    bot.on('death', () => reflex.dispose());
+    bot.on('death', () => {
+      reflex.dispose();
+      strategic?.reset();
+    });
+  }
+
+  /** Obey a chat command, but only from the bot's owner. Everything else is ignored. */
+  private handleChat(bot: BotLike, reflex: ReflexLoop, sender: string, message: string): void {
+    const { owner, username } = this.config;
+    if (sender === username || !this.modes) return;
+    if (!isAuthorized(sender, owner)) return;
+    const command = parseChat(message, username);
+    if (!command) return;
+
+    const reply = this.modes.apply(command, bot.entity.position, this.snapshot());
+    if (this.modes.standingDown) reflex.clearOverride();
+    this.log.info(`${command.name} from ${sender}: ${reply}`);
+    bot.chat(reply);
+  }
+
+  private stopReflex(): void {
+    this.modes = null;
+    this.strategic?.stop();
+    this.strategic = null;
+    this.reflex?.dispose();
+    this.reflex = null;
   }
 
   private scheduleReconnect(): void {

@@ -107,11 +107,23 @@ describe('reflex and rules settings', () => {
     const [bot] = parseConfig(base()).bots;
     expect(bot?.reflex).toEqual({ enabled: true, everyTicks: 1 });
     expect(bot?.rules).toEqual({
+      retreat: false,
       retreatHp: 6,
       resumeHp: 14,
       engageRadiusBlocks: 16,
       eatBelowFood: 15,
+      noEatRadiusBlocks: 10,
+      dangerMargin: 0.8,
+      retreatCheckMs: 2000,
+      retreatMinGainBlocks: 1.5,
+      fightBackMs: 4000,
     });
+  });
+
+  it('lets a bot turn retreating on for itself', () => {
+    const raw = base();
+    raw.bots = [{ username: 'Careful', overrides: { rules: { retreat: true } } }];
+    expect(parseConfig(raw).bots[0]?.rules.retreat).toBe(true);
   });
 
   it('lets a bot override rules individually', () => {
@@ -128,5 +140,60 @@ describe('reflex and rules settings', () => {
     const raw = base();
     raw.bots = [{ username: 'Odd', overrides: { rules: { retreatHp: 15 } } }];
     expect(() => parseConfig(raw)).toThrow(/retreatHp must be <= resumeHp/);
+  });
+});
+
+describe('strategic and decision-log settings', () => {
+  it('has defaults', () => {
+    const cfg = parseConfig(base());
+    expect(cfg.bots[0]?.strategic).toEqual({
+      enabled: true,
+      intervalMs: 2000,
+      eventTriggers: ['hurt', 'newThreat', 'lowHp'],
+      minGapMs: 250,
+    });
+    expect(cfg.debug.decisionLogDir).toBe('logs');
+  });
+
+  it('lets a bot turn Jev off, or decide more often, on its own', () => {
+    const raw = base();
+    raw.bots = [
+      { username: 'Rules', overrides: { strategic: { enabled: false } } },
+      { username: 'Quick', overrides: { strategic: { intervalMs: 500 } } },
+    ];
+    const [rulesOnly, quick] = parseConfig(raw).bots;
+    expect(rulesOnly?.strategic.enabled).toBe(false);
+    expect(quick?.strategic).toMatchObject({ enabled: true, intervalMs: 500 });
+  });
+
+  it('accepts an empty decision log directory to turn logging off', () => {
+    const raw = base();
+    raw.debug.decisionLogDir = '';
+    expect(parseConfig(raw).debug.decisionLogDir).toBe('');
+  });
+});
+
+describe('bot modes and owners', () => {
+  it('defaults to guard mode with no owner', () => {
+    const bot = parseConfig(base()).bots[0];
+    expect(bot?.mode).toBe('guard');
+    expect(bot?.owner).toBeUndefined();
+  });
+
+  it('accepts guard, hunt and idle, per bot', () => {
+    const raw = base();
+    raw.bots = [
+      { username: 'Alpha', owner: 'Boss', mode: 'hunt' },
+      { username: 'Bravo', mode: 'idle' },
+    ];
+    const [alpha, bravo] = parseConfig(raw).bots;
+    expect(alpha).toMatchObject({ mode: 'hunt', owner: 'Boss' });
+    expect(bravo?.mode).toBe('idle');
+  });
+
+  it('rejects a mode that a bot cannot start in', () => {
+    const raw = base();
+    raw.bots = [{ username: 'Alpha', mode: 'follow' }];
+    expect(() => parseConfig(raw)).toThrow(/Invalid config/);
   });
 });

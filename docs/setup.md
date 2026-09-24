@@ -64,18 +64,24 @@ This prints each bot's settings, connects every bot in `config/default.json` to 
 
 If the server goes away, bots reconnect with exponential backoff (1s up to 30s). Press Ctrl+C to stop them. To use a different config file, set `MC_JEV_CONFIG=path/to/config.json`.
 
-### Chat commands (from Phase 4)
+### Chat commands
 
-Bots run on their own by default. A bot's `owner` can type these commands in chat to take over:
+Bots run on their own by default, fighting the hostile mobs that come near. A bot's owner can type these in chat to give it orders. Set the owner in `config/default.json` with `bots[].owner` (your Minecraft name):
 
-| Command      | Effect                             |
-| ------------ | ---------------------------------- |
-| `follow`     | Follow the owner                   |
-| `guard here` | Defend the current spot            |
-| `hunt`       | Seek out hostiles                  |
-| `stop`       | Stop everything                    |
-| `status`     | Report HP, mode and current intent |
-| `auto`       | Return to autonomous mode          |
+| Command                   | Effect                                                                                                                                                                        |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `follow` (or `follow me`) | Follow the owner. The bot still fights threats first, then goes back to following. The owner must be one the server is tracking for the bot, which is within about 48 blocks. |
+| `guard here`              | Hold this spot. The bot fights what comes near, then walks back to the post. It gives up a chase and returns once it is more than 14 blocks from the post.                    |
+| `hunt`                    | Seek out hostiles up to 24 blocks away, and wander about 15 blocks at a time to find some when none are in sight.                                                             |
+| `stop`                    | Stand down: no fighting, no moving and no Jev calls, until you say `auto`. A bot that has stopped does not defend itself.                                                     |
+| `auto`                    | Go back to the bot's default mode (`bots[].mode`).                                                                                                                            |
+| `status`                  | The bot replies with its mode, HP, food and the nearest hostile.                                                                                                              |
+| `help`                    | The bot lists these commands.                                                                                                                                                 |
+
+- **Exact commands only.** A message must be exactly one of these (case-insensitive, with an optional leading `!`), so ordinary chat is never mistaken for an order. `please follow me around` does nothing.
+- **Owner only.** Everyone else is ignored, and a bot with no `owner` obeys nobody. Whispers work too.
+- **Several bots.** A plain command goes to every bot you own. Start the message with a bot's name to command just that one: `JevBot follow`, `@JevBot: stop`.
+- **Default mode.** `bots[].mode` is what a bot does until it is told otherwise: `guard` (the default: hold position and fight what comes near), `hunt`, or `idle` (do nothing).
 
 ## 5. Tests and checks
 
@@ -95,6 +101,29 @@ npm run test:integration          # starts its own throwaway servers (needs step
 
 Together the tests cover spawning, seeing another player, reconnecting after a kick, wearing armor, killing a summoned zombie with the best sword, retreating at low HP, and eating when hungry. They take about 35 seconds.
 
+### Live Jev test
+
+`npm run test:live` makes a few real Jev calls with the key in `.env` and checks that the answers have the expected shape and make sense (a hopeless fight scores more dangerous than an easy one). It costs a fraction of a cent, writes its measurements to `logs/live-smoke.jsonl`, and is skipped when there is no key. It never runs in CI.
+
+### Survival benchmark
+
+`npm run benchmark:survival` runs fights against summoned mobs on a throwaway server and reports how often the bot survives:
+
+```bash
+npm run benchmark:survival -- --trials 8 --label mychange
+npm run benchmark:survival -- --scenarios zombie-lowhp,creeper --trials 20
+```
+
+Options: `--trials N` (default 8), `--scenarios a,b,c` (default all), `--label NAME`, `--timeout SECONDS` per trial (default 30), `--port N` (default 25597). Natural regeneration is switched off so that starting HP is a controlled variable. Results are printed as a table and saved to `logs/survival-<label>-<time>.json`. A full run takes about 15 minutes. See [survival-benchmark.md](survival-benchmark.md) for results and how to read them.
+
+### Decision log
+
+While a bot runs with Jev, every decision is appended to `logs/decisions-YYYY-MM-DD.jsonl`, one JSON object per line. To see what Jev is doing:
+
+```bash
+tail -f logs/decisions-*.jsonl | jq -c '{agent, trigger, outcome, why, intent: .intent.tactic, latencyMs, costUsd}'
+```
+
 ## Configuration reference (`config/default.json`)
 
 ### Server
@@ -113,40 +142,48 @@ Together the tests cover spawning, seeing another player, reconnecting after a k
 
 ### Debugging
 
-| Setting                    | Meaning                                                        | Default |
-| -------------------------- | -------------------------------------------------------------- | ------- |
-| `debug.snapshotIntervalMs` | How often each bot prints what it perceives. `0` turns it off. | 1000    |
+| Setting                    | Meaning                                                                            | Default |
+| -------------------------- | ---------------------------------------------------------------------------------- | ------- |
+| `debug.snapshotIntervalMs` | How often each bot prints what it perceives. `0` turns it off.                     | 1000    |
+| `debug.decisionLogDir`     | Directory for the log of Jev decisions (JSONL). An empty string turns the log off. | `logs`  |
 
 ### Per-bot defaults
 
-| Setting                                             | Meaning                                                                                  | Default                      |
-| --------------------------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------- |
-| `defaults.perception.radiusBlocks`                  | Ignore entities farther away than this                                                   | 24                           |
-| `defaults.perception.maxEntities`                   | Keep at most this many entities (nearest first)                                          | 8                            |
-| `defaults.perception.fovDegrees`                    | Horizontal field of view. Entities outside it are dropped. 360 turns the filter off.     | 360                          |
-| `defaults.perception.requireLineOfSight`            | Drop entities behind walls, so the bot can't see through them                            | false                        |
-| `defaults.reflex.enabled`                           | Turn the reflex layer off to make a bot observe-only                                     | true                         |
-| `defaults.reflex.everyTicks`                        | Run the reflex layer every N game ticks (one tick is 50ms)                               | 1                            |
-| `defaults.rules.retreatHp`                          | At or below this HP (of 20) the bot retreats from hostiles                               | 6                            |
-| `defaults.rules.resumeHp`                           | After retreating, resume fighting once HP is back to this. Must be at least `retreatHp`. | 14                           |
-| `defaults.rules.engageRadiusBlocks`                 | Engage hostiles within this many blocks                                                  | 16                           |
-| `defaults.rules.eatBelowFood`                       | Start eating when food falls below this level (of 20)                                    | 15                           |
-| `defaults.strategic.intervalMs`                     | Time between periodic strategic decisions                                                | 2000                         |
-| `defaults.strategic.eventTriggers`                  | Events that trigger an immediate decision                                                | `hurt`, `newThreat`, `lowHp` |
-| `defaults.strategic.minGapMs`                       | Minimum time between any two decisions                                                   | 250                          |
-| `defaults.jev.model`                                | Jev model                                                                                | `jev-latest`                 |
-| `defaults.jev.timeoutMs`, `defaults.jev.maxRetries` | Timeout per call, and how many retries                                                   | 800, 0                       |
-| `defaults.jev.thresholds.act`                       | Confidence needed to act on a decision                                                   | 0.7                          |
-| `defaults.jev.thresholds.cautious`                  | Confidence needed to act cautiously. Below this, rules decide.                           | 0.5                          |
+| Setting                                             | Meaning                                                                                       | Default                      |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------- |
+| `defaults.perception.radiusBlocks`                  | Ignore entities farther away than this                                                        | 24                           |
+| `defaults.perception.maxEntities`                   | Keep at most this many entities (nearest first)                                               | 8                            |
+| `defaults.perception.fovDegrees`                    | Horizontal field of view. Entities outside it are dropped. 360 turns the filter off.          | 360                          |
+| `defaults.perception.requireLineOfSight`            | Drop entities behind walls, so the bot can't see through them                                 | false                        |
+| `defaults.reflex.enabled`                           | Turn the reflex layer off to make a bot observe-only                                          | true                         |
+| `defaults.reflex.everyTicks`                        | Run the reflex layer every N game ticks (one tick is 50ms)                                    | 1                            |
+| `defaults.rules.retreatHp`                          | At or below this HP (of 20) the bot retreats from hostiles                                    | 6                            |
+| `defaults.rules.resumeHp`                           | After retreating, resume fighting once HP is back to this. Must be at least `retreatHp`.      | 14                           |
+| `defaults.rules.engageRadiusBlocks`                 | Engage hostiles within this many blocks                                                       | 16                           |
+| `defaults.rules.eatBelowFood`                       | Start eating when food falls below this level (of 20)                                         | 15                           |
+| `defaults.rules.noEatRadiusBlocks`                  | Don't eat while a hostile is within this many blocks (eating slows you and cancels sprinting) | 10                           |
+| `defaults.rules.dangerMargin`                       | Fight only if the expected damage is below this fraction of current HP; otherwise retreat     | 0.8                          |
+| `defaults.rules.retreatCheckMs`                     | A retreat is judged every this many milliseconds...                                           | 2000                         |
+| `defaults.rules.retreatMinGainBlocks`               | ...and has failed if the distance to the threat grew by less than this                        | 1.5                          |
+| `defaults.rules.fightBackMs`                        | After a failed retreat, fight back for this long. 0 turns fight-back off.                     | 4000                         |
+| `defaults.strategic.enabled`                        | Ask Jev for decisions. When false, or with no API key, the rules decide alone.                | true                         |
+| `defaults.strategic.intervalMs`                     | Time between periodic strategic decisions                                                     | 2000                         |
+| `defaults.strategic.eventTriggers`                  | Events that trigger an immediate decision                                                     | `hurt`, `newThreat`, `lowHp` |
+| `defaults.strategic.minGapMs`                       | Minimum time between any two decisions                                                        | 250                          |
+| `defaults.jev.model`                                | Jev model                                                                                     | `jev-latest`                 |
+| `defaults.jev.timeoutMs`, `defaults.jev.maxRetries` | Timeout per call, and how many retries                                                        | 800, 0                       |
+| `defaults.jev.thresholds.act`                       | Confidence needed to act on a decision                                                        | 0.7                          |
+| `defaults.jev.thresholds.cautious`                  | Confidence needed to act cautiously. Below this, rules decide.                                | 0.5                          |
 
 ### Bots
 
-| Setting            | Meaning                                                       | Default   |
-| ------------------ | ------------------------------------------------------------- | --------- |
-| `bots[].username`  | Username: 3–16 letters, digits or `_`. Must be unique.        | `JevBot`  |
-| `bots[].role`      | `fighter`, `tank`, `ranged`, `support` or `scout`             | `fighter` |
-| `bots[].owner`     | Player who can give chat commands                             | none      |
-| `bots[].overrides` | Any `reflex`, `strategic` or `jev` settings for this bot only | none      |
+| Setting            | Meaning                                                                              | Default   |
+| ------------------ | ------------------------------------------------------------------------------------ | --------- |
+| `bots[].username`  | Username: 3–16 letters, digits or `_`. Must be unique.                               | `JevBot`  |
+| `bots[].role`      | `fighter`, `tank`, `ranged`, `support` or `scout`                                    | `fighter` |
+| `bots[].owner`     | Your Minecraft name. Only this player can give the bot chat commands.                | none      |
+| `bots[].mode`      | What the bot does until told otherwise: `guard`, `hunt` or `idle`                    | `guard`   |
+| `bots[].overrides` | Any `perception`, `reflex`, `rules`, `strategic` or `jev` settings for this bot only | none      |
 
 Example: two bots, where the second decides more often and needs more confidence before acting:
 
@@ -163,7 +200,7 @@ Example: two bots, where the second decides more often and needs more confidence
 | Symptom                                         | Fix                                                                                                                             |
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `Invalid config: …` at startup                  | The message names the bad field. Check it against the configuration reference above.                                            |
-| `Jev: no key (rules-only)`                      | `.env` is missing, or `TYPESAFE_API_KEY` is empty in it.                                                                        |
-| Jev returns 401                                 | Check the key, and that `TYPESAFE_BASE_URL` matches where the key came from (OpenRouter or TypeSafe).                           |
+| `Jev: no key, so the bots run on rules only`    | `.env` is missing, or `TYPESAFE_API_KEY` is empty in it.                                                                        |
+| `Jev unavailable (auth…)` or a 401              | Check the key, and that `TYPESAFE_BASE_URL` matches where the key came from (OpenRouter or TypeSafe).                           |
 | Jev returns 429 or 529, or calls time out often | Raise `strategic.intervalMs` or `jev.timeoutMs`, or lower `gateway.maxCallsPerMinute`. Bots fall back to rules in the meantime. |
 | Bot can't join the server                       | Check that the server is running with `online-mode=false`, and that `server.version` matches it or is `false`.                  |

@@ -9,7 +9,8 @@
     "dailyBudgetUsd": 1.0
   },
   "debug": {
-    "snapshotIntervalMs": 1000
+    "snapshotIntervalMs": 1000,
+    "decisionLogDir": "logs"
   },
   "defaults": {
     "perception": {
@@ -23,12 +24,19 @@
       "everyTicks": 1
     },
     "rules": {
+      "retreat": false,
       "retreatHp": 6,
       "resumeHp": 14,
       "engageRadiusBlocks": 16,
-      "eatBelowFood": 15
+      "eatBelowFood": 15,
+      "noEatRadiusBlocks": 10,
+      "dangerMargin": 0.8,
+      "retreatCheckMs": 2000,
+      "retreatMinGainBlocks": 1.5,
+      "fightBackMs": 4000
     },
     "strategic": {
+      "enabled": true,
       "intervalMs": 2000,
       "eventTriggers": ["hurt", "newThreat", "lowHp"],
       "minGapMs": 250

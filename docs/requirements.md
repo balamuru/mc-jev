@@ -35,27 +35,32 @@ It covers chasing, aiming, attack timing (respecting the weapon's cooldown), cho
 
 ### FR-4 Strategic layer
 
-The trigger events are `hurt`, `newThreat` and `lowHp`. Each call asks four questions:
+The trigger events are `hurt`, `newThreat` and `lowHp`, plus the periodic interval. The layer asks only when a threat is present. Each call asks four questions about the same state:
 
-| Question       | Type   |
-| -------------- | ------ |
-| `tactic`       | choice |
-| `threat_level` | score  |
-| `target`       | choice |
-| `ambush`       | noul   |
+| Question       | Type   | Answer                                                       |
+| -------------- | ------ | ------------------------------------------------------------ |
+| `tactic`       | choice | `engage`, `retreat` or `ignore` (what the bot can carry out) |
+| `target`       | choice | one of the visible threats, or `none`                        |
+| `threat_level` | score  | four levels, from "no real danger" to "deadly"               |
+| `ambush`       | noul   | the probability of being surrounded                          |
+
+Jev's judgment is merged with the rules by a confidence-gated policy (see [architecture.md](architecture.md)). Jev can always make the bot more careful, but it cannot make it less careful at critical HP.
 
 ### FR-5 Resilience
 
-- **One call at a time:** each bot has at most one Jev call in flight. A newer call cancels the older one through `AbortSignal`.
+- **One call at a time:** each bot has at most one Jev call in flight. A newer call cancels the older one through `AbortSignal`, and this is not counted as a failure.
 - **Timeout:** every call has a timeout (`jev.timeoutMs`).
-- **Freshness check:** before acting, check that the answer is still relevant, since the situation may have changed while the call was in flight.
-- **Rules fallback:** when a call times out, fails or comes back with low confidence, the bot falls back to its rules.
-- **Limits:** a rate limit and a daily budget, shared by all bots (see FR-9 and FR-10).
+- **Freshness check:** an answer is discarded if HP fell by 5 or more while it was in flight, its chosen target has gone, or the threats are gone.
+- **Rules fallback:** when a call times out, fails, is refused, comes back malformed or with low confidence, the rules decide.
+- **Limits:** a rate limit and a daily budget, shared by all bots (see FR-9 and FR-10). After a rate-limit or server error, calls pause for 5 seconds. A rejected key or empty account stops Jev for the run.
 
 ### FR-6 Modes and chat
 
-- **Autonomous modes:** `guard`, `hunt` and `idle`.
-- **Chat commands:** `follow`, `guard here`, `hunt`, `stop`, `status` and `auto`. The bot ignores commands from anyone except its `owner`.
+- **Autonomous by default.** Each bot has a default mode (`bots[].mode`): `guard` (hold position and fight what comes near), `hunt` (seek out hostiles) or `idle` (do nothing).
+- **Chat commands** from the bot's `owner`: `follow`, `guard here`, `hunt`, `stop`, `auto`, `status` and `help`. The bot ignores commands from anyone else, and a bot with no owner obeys nobody.
+- **Exact matching.** Only whole messages that are commands count, so ordinary chat is never mistaken for one. A message can start with a bot's name to command just that bot.
+- **Standing down.** After `stop` the bot neither fights nor moves nor asks Jev, until `auto` or another command.
+- The bot confirms each command in chat.
 
 ### FR-7 Player combat
 
@@ -64,21 +69,21 @@ The trigger events are `hurt`, `newThreat` and `lowHp`. Each call asks four ques
 
 ### FR-8 Observability
 
-Each log line records:
+Every decision, applied or not, is one line in `logs/decisions-YYYY-MM-DD.jsonl`:
 
-- the agent ID
-- a state summary
-- the question-set version
-- the answers and their confidence
-- the call's latency and cost
-- the action taken
+- the agent, the trigger and the question-set version
+- a text summary of what the bot saw
+- Jev's answers and confidence
+- the outcome (`applied`, `rules`, `stale`, `invalid` or `error`) and why
+- the resulting intent
+- the call's latency, tokens and cost
 
 The API key is never logged.
 
 ### FR-12 Survive a retreat
 
-- **No eating near hostiles:** auto-eat is paused within `rules.noEatRadiusBlocks` of a hostile. Instant heals are exempt.
-- **Danger-based retreat:** the bot retreats when an estimate of the fight says it would lose. `rules.retreatHp` remains a hard floor.
+- **No eating near hostiles:** auto-eat is paused within `rules.noEatRadiusBlocks` of a hostile. (Instant heals such as golden apples are not implemented yet; see the backlog.)
+- **Danger-based retreat:** the bot retreats when an estimate of the fight says it would lose, and fights when the estimate says the fight is safe, even at low HP. `rules.retreatHp` applies unless the fight is clearly safe.
 - **Failing retreat:** if the distance to the threat hasn't grown by `rules.retreatMinGainBlocks` within `rules.retreatCheckMs`, the bot fights back.
 - **Measured:** the survival benchmark reports survival rate per scenario, and its baseline and results are recorded in `docs/survival-benchmark.md`.
 
@@ -93,9 +98,9 @@ The shared data travels over a `Bus` and is collected on a `Blackboard`. There a
 
 - **Latency:**
   - The reflex layer never waits on I/O.
-  - Jev calls default to an 800ms timeout.
+  - Jev calls default to an 800ms timeout (a call takes about 270ms in practice).
   - The game tick is 50ms. Jev is never called inside a tick.
-- **Cost:** the default settings target under $0.10/hour per bot. See the cost section in [architecture.md](architecture.md).
+- **Cost:** about $0.00003 per Jev call, so under $0.06/hour per bot even with a threat present all the time (measured). See the cost section in [architecture.md](architecture.md).
 - **Security:**
   - The API key comes only from `.env` or the environment.
   - `.env` is gitignored.

@@ -40,6 +40,8 @@ export interface ObserveInput {
   now: number;
   self: SelfLike;
   entities: EntityLike[];
+  /** The owner's entity, if known. */
+  owner?: EntityLike | null;
   /** Returns true when nothing solid blocks the line between two points. */
   hasLineOfSight?: (from: Vec3Like, to: Vec3Like) => boolean;
 }
@@ -92,5 +94,10 @@ export interface Snapshot {
     inWater: boolean;
   };
   entities: EntitySummary[];
+  /**
+   * The bot's owner, if the server is tracking them, even when they are beyond the perception
+   * radius (a player is tracked out to about 48 blocks). Used to follow them.
+   */
+  owner?: EntitySummary | null;
   inventory: string[];
 }

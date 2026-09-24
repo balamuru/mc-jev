@@ -17,7 +17,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
-    "check": "npm run lint && npm run typecheck && npm test"
+    "check": "npm run lint && npm run typecheck && npm test",
+    "benchmark:survival": "tsx scripts/survival-benchmark.ts",
+    "test:live": "vitest run --config vitest.live.config.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -7,9 +7,9 @@ Each phase ends with `npm run check` passing, the phase's integration scenario w
 | 0     | Repo and scaffolding                          | FR-9             | Done    |
 | 1     | Server, connection and perception             | FR-1, FR-2       | Done    |
 | 2     | Reflex layer: rules-only fighter against mobs | FR-3             | Done    |
-| 2.5   | Survival hardening                            | FR-12            | Next    |
-| 3     | Jev strategic layer against mobs              | FR-4, FR-5, FR-8 | Planned |
-| 4     | Modes and chat commands                       | FR-6             | Planned |
+| 2.5   | Survival hardening                            | FR-12            | Done    |
+| 3     | Jev strategic layer against mobs              | FR-4, FR-5, FR-8 | Done    |
+| 4     | Modes and chat commands                       | FR-6             | Done    |
 | 5     | Player combat                                 | FR-7             | Planned |
 | 6     | Multiple bots and swarm                       | FR-10, FR-11     | Planned |
 | 7     | Tuning (optional)                             | none             | Planned |
@@ -45,34 +45,35 @@ Each phase ends with `npm run check` passing, the phase's integration scenario w
 
 ## Phase 2.5: Survival hardening
 
-The rules-only fighter can still die while retreating. Auto-eat makes it stop and eat with a zombie behind it, it retreats only when HP is already critical, and nothing notices when a retreat is failing. This phase fixes those three, and measures the result.
+The rules-only fighter could die while retreating: auto-eat made it stop and eat with a zombie behind it, it retreated only when HP was already critical, and nothing noticed a failing retreat. This phase fixed these and measured the result.
 
-- **Survival benchmark first.** An opt-in script (`npm run benchmark:survival`) runs each scenario about 20 times on the throwaway test server and reports survival rate and mean time to death. Scenarios: one zombie at low HP, three zombies at full HP, a baby zombie, a spider, a skeleton, and a creeper. The baseline goes into `docs/survival-benchmark.md` before any change, so every improvement is judged by numbers.
-- **No eating near hostiles.** Auto-eat is paused while a hostile is within `rules.noEatRadiusBlocks` (default 10), and any eating in progress is cancelled. Instant heals such as golden apples and healing potions are not affected. The decision is a pure function.
-- **Danger-based retreat.** A pure `assessDanger` function estimates whether the bot would win the fight from the number and type of hostiles, their distance, and the bot's HP, armor and weapon. The bot retreats when it would lose, or avoids starting the fight. `rules.retreatHp` stays as a hard floor. The mob stats table in code is approximate and documented as such.
-- **Retreat failure detection.** A pure `RetreatWatch` tracks the distance to the threat. If the distance hasn't grown by `rules.retreatMinGainBlocks` (default 1.5) within `rules.retreatCheckMs` (default 2000), the retreat has failed, and the bot fights back for a short time instead of standing still or being chased down.
-- **Tests:**
-  - Unit tests for each pure function (eating pause, danger estimate, retreat watch).
-  - The retreat integration test also checks that the bot does not eat while a zombie is close.
-  - Exit criteria: benchmark before and after are recorded, no scenario gets worse, and the low-HP scenarios improve.
+- **Survival benchmark** (`npm run benchmark:survival`): nine scenarios run 8 times each on the throwaway server. The baseline, the intermediate runs and the final results are in [survival-benchmark.md](survival-benchmark.md).
+- **No eating near hostiles:** auto-eat pauses while a hostile is within `rules.noEatRadiusBlocks` (default 10) and resumes afterwards. Checked by an integration test, since the benchmark switches regeneration off.
+- **Danger-based fight assessment:** `estimateFight` predicts the damage the bot would take from the hostiles' kind, distance and count, and the bot's weapon and armor. It is calibrated against the baseline runs.
+- **Failed-retreat detection:** if the distance to the threat has not grown by `rules.retreatMinGainBlocks` within `rules.retreatCheckMs`, the bot fights back for `rules.fightBackMs`.
+- **The finding:** the benchmark showed that retreating without a safe place to run does more harm than good. `rules.retreat` therefore defaults to **off**, and everything above except the eating pause only takes effect when it is switched on.
+- **Results:** one zombie at 6 HP went from 25% to 100% survival; three zombies at 6 HP from 25% to 88%; one skeleton at 6 HP from 12% to 100%. Nothing got worse.
+- **Tests:** unit tests for each pure function, and integration tests for the eating pause and for retreating (when on) and fighting on (by default).
 
 ## Phase 3: Jev strategic layer
 
-- **`strategic/jev.ts`:** wraps `TypeSafeClient`. It uses OpenRouter via `TYPESAFE_BASE_URL`.
-- **`strategic/gateway.ts`:** the shared `JevGateway`. It enforces the global rate limit and budget, allows one call at a time per agent, and tracks cost from `usage.cost`.
-- **`strategic/scheduler.ts`:** triggers decisions on the interval and on events, enforces `minGapMs`, and cancels stale calls.
-- **`strategic/questions.ts`:** the four questions and their thresholds, versioned.
-- **`strategic/policy.ts`:** maps answers and confidence to an `Intent`, or falls back to the rules.
-- **`telemetry/log.ts`:** writes the JSONL decision log and cost totals.
+- **`strategic/jev.ts`:** wraps the official `@typesafe-ai/sdk` and reaches Jev through OpenRouter via `TYPESAFE_BASE_URL`. SDK failures become a few typed error kinds.
+- **`strategic/gateway.ts`:** the shared `JevGateway`. It enforces the global rate limit and daily budget, allows one call at a time per bot, pauses after rate-limit and server errors, stops for good after a bad key or no credit, and tracks cost from `usage.cost`. It never throws.
+- **`strategic/layer.ts`:** `StrategicLayer` triggers a decision on the interval and on events (enforcing `minGapMs`), skips calls when no threat is present, discards stale answers and hands the result to the reflex layer as an override.
+- **`strategic/questions.ts`:** the four questions, the state description and the answer parser, versioned (`QUESTION_SET_VERSION`).
+- **`strategic/policy.ts`:** the confidence-gated merge of Jev's judgment with the rules.
+- **`telemetry/decisionLog.ts`:** the JSONL decision log.
 - **Tests:**
-  - Unit tests for the policy, the scheduler (with fake timers), the gateway, and the Jev client (with a mocked fetch).
-  - An opt-in live smoke test.
+  - Unit tests for every piece, with fake timers and a scripted client. The client tests run the real SDK against a fake network.
+  - An integration test on a real server with a scripted Jev (retreat, target choice, and fighting on when Jev fails).
+  - An opt-in live test (`npm run test:live`) against the real API. Measured: 271ms, 711 tokens and $0.00003 per call.
 
 ## Phase 4: Modes and chat commands
 
-- **Modes:** `guard`, `hunt` and `idle`. The bot is autonomous by default.
-- **Commands:** `follow`, `guard here`, `hunt`, `stop`, `status` and `auto`, accepted from the owner only.
-- **Tests:** unit tests for command parsing and owner-only access.
+- **Modes:** `guard` (the default: hold position and fight what comes near), `hunt` and `idle`, set per bot with `bots[].mode`. Commands add `follow` and a guard post.
+- **Commands:** `follow`, `guard here`, `hunt`, `stop`, `auto`, `status` and `help`, accepted from the bot's owner only, matched exactly, and confirmed in chat. A message that starts with a bot's name commands just that bot.
+- **Behavior:** `follow` uses a direct owner lookup that reaches beyond the perception radius. `guard here` returns the bot to its post when idle or pulled more than 14 blocks away. `hunt` widens the engage radius and wanders when nothing is in sight. `stop` stops fighting, moving and asking Jev.
+- **Tests:** unit tests for parsing, authorization and every mode's decisions; agent tests for the chat wiring; and an integration test on a real server in which an owner client gives orders in chat and a stranger's orders are ignored.
 
 ## Phase 5: Player combat
 

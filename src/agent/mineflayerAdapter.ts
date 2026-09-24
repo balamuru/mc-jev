@@ -21,6 +21,8 @@ export interface BotLike extends EventEmitter {
     isInWater?: boolean;
   };
   entities: Record<string, EntityLike>;
+  /** Players the server has told the bot about; `entity` is set while they are close enough to track. */
+  players: Record<string, { entity?: EntityLike | null }>;
   health: number;
   food: number;
   heldItem: ItemLike | null;
@@ -34,6 +36,7 @@ export interface BotLike extends EventEmitter {
     raycast(from: Vec3, direction: Vec3, range: number): unknown;
   };
   quit(reason?: string): void;
+  chat(message: string): void;
 }
 
 const ARMOR_SLOTS = [5, 6, 7, 8];
@@ -43,6 +46,7 @@ export function readSnapshot(
   bot: BotLike,
   options: Partial<PerceptionOptions> = {},
   now: number = Date.now(),
+  ownerName?: string,
 ): Snapshot {
   const self = bot.entity;
   return buildSnapshot(
@@ -61,6 +65,7 @@ export function readSnapshot(
       },
       // Exclude the bot itself; the snapshot already describes it.
       entities: Object.values(bot.entities).filter((e) => e !== (self as unknown)),
+      owner: ownerName ? findPlayer(bot, ownerName) : null,
       hasLineOfSight: (from, to) => {
         const origin = new Vec3(from.x, from.y, from.z);
         const delta = new Vec3(to.x - from.x, to.y - from.y, to.z - from.z);
@@ -71,4 +76,13 @@ export function readSnapshot(
     },
     options,
   );
+}
+
+/** A player's entity by name (any case), if the bot can currently see them. */
+function findPlayer(bot: BotLike, name: string): EntityLike | null {
+  const wanted = name.toLowerCase();
+  for (const [username, player] of Object.entries(bot.players)) {
+    if (username.toLowerCase() === wanted) return player.entity ?? null;
+  }
+  return null;
 }

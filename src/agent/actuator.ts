@@ -4,6 +4,7 @@ import armorManager from 'mineflayer-armor-manager';
 import { loader as autoEat } from 'mineflayer-auto-eat';
 import type { Entity } from 'prismarine-entity';
 import { isArmorName } from '../reflex/armor.js';
+import type { Vec3Like } from '../perception/types.js';
 import { bestWeapon, cooldownTicks } from '../reflex/weapons.js';
 import type { Actuator } from '../reflex/loop.js';
 
@@ -20,6 +21,10 @@ const FOLLOW_RANGE_BLOCKS = 2;
 export const ATTACK_REACH_BLOCKS = 3.0;
 /** Retreating bots try to get this far from the threat. */
 const RETREAT_DISTANCE_BLOCKS = 24;
+/** How close the bot stays to an entity it is following. */
+const FOLLOW_OWNER_RANGE_BLOCKS = 3;
+/** How close counts as having arrived at a `goto` point. */
+const ARRIVE_RANGE_BLOCKS = 2;
 /** Aim at the target only when it is this close, to save work while chasing. */
 const AIM_DISTANCE_BLOCKS = 8;
 
@@ -55,7 +60,7 @@ export function attachPlugins(bot: Bot, settings: PluginSettings): void {
   bot.autoEat.enableAuto();
 }
 
-type Mode = 'idle' | 'engage' | 'retreat';
+type Mode = 'idle' | 'engage' | 'retreat' | 'follow' | 'goto';
 
 /** Drives a real Mineflayer bot: pathfinding, weapon choice, aiming and attack timing. */
 export class MineflayerActuator implements Actuator {
@@ -86,11 +91,39 @@ export class MineflayerActuator implements Actuator {
     );
   }
 
+  follow(targetId: number): void {
+    const target = this.bot.entities[targetId];
+    if (!target || !this.bot.pathfinder) return;
+    this.mode = 'follow';
+    this.targetId = targetId;
+    this.bot.pathfinder.setGoal(new goals.GoalFollow(target, FOLLOW_OWNER_RANGE_BLOCKS), true);
+  }
+
+  goTo(position: Vec3Like): void {
+    if (!this.bot.pathfinder) return;
+    this.mode = 'goto';
+    this.targetId = null;
+    this.bot.pathfinder.setGoal(
+      new goals.GoalNear(position.x, position.y, position.z, ARRIVE_RANGE_BLOCKS),
+    );
+  }
+
   stop(): void {
     this.mode = 'idle';
     this.targetId = null;
     this.bot.pathfinder?.setGoal(null);
     this.bot.clearControlStates();
+  }
+
+  setEatingPaused(paused: boolean): void {
+    const autoEatPlugin = this.bot.autoEat;
+    if (!autoEatPlugin) return;
+    if (paused) {
+      autoEatPlugin.disableAuto();
+      if (autoEatPlugin.isEating) autoEatPlugin.cancelEat();
+    } else {
+      autoEatPlugin.enableAuto();
+    }
   }
 
   tick(elapsedTicks: number): void {

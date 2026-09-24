@@ -165,3 +165,23 @@ describe('buildSnapshot', () => {
     expect(buildSnapshot({ ...input([]), self: bare }).self.heldItem).toBeNull();
   });
 });
+
+describe('buildSnapshot owner', () => {
+  it('describes the owner however far away, unlike ordinary entities', () => {
+    const far = entity({ type: 'player', name: undefined, username: 'Boss', x: 40, z: 0 });
+    const snapshot = buildSnapshot(input([far], { owner: far }));
+    expect(snapshot.entities).toEqual([]); // beyond the 24-block radius
+    expect(snapshot.owner).toMatchObject({
+      id: far.id,
+      kind: 'Boss',
+      category: 'player',
+      dist: 40,
+      bearing: 'right',
+    });
+  });
+
+  it('is null when there is no owner or the owner is not visible', () => {
+    expect(buildSnapshot(input([])).owner).toBeNull();
+    expect(buildSnapshot(input([], { owner: null })).owner).toBeNull();
+  });
+});

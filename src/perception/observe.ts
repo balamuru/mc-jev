@@ -44,10 +44,12 @@ function summarize(
   category: EntityCategory,
   input: ObserveInput,
   opts: PerceptionOptions,
+  /** Skip the radius, so the owner is described however far away they are. */
+  ignoreRadius = false,
 ): EntitySummary | null {
   const { self } = input;
   const dist = distance(self.position, e.position);
-  if (dist > opts.radiusBlocks) return null;
+  if (!ignoreRadius && dist > opts.radiusBlocks) return null;
 
   const rel = relativeYaw(self.position, self.yaw, e.position);
   let visible = withinFov(rel, opts.fovDegrees);
@@ -108,6 +110,7 @@ export function buildSnapshot(
       inWater: self.inWater,
     },
     entities: seen.slice(0, opts.maxEntities),
+    owner: input.owner ? summarize(input.owner, 'player', input, opts, true) : null,
     inventory: self.inventory.map((i) => `${i.name}x${i.count}`),
   };
 }

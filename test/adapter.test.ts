@@ -68,3 +68,29 @@ describe('readSnapshot', () => {
     expect(readSnapshot(bot, { requireLineOfSight: true }).entities).toHaveLength(1);
   });
 });
+
+describe('readSnapshot owner lookup', () => {
+  it('finds the owner by name in any case, even beyond the perception radius', () => {
+    const bot = new FakeBot();
+    bot.players.boss = {
+      entity: {
+        id: 9,
+        type: 'player',
+        username: 'boss',
+        position: { x: 0, y: 64, z: -40 },
+        velocity: { x: 0, y: 0, z: 0 },
+      },
+    };
+    const snap = readSnapshot(bot, {}, 0, 'BOSS');
+    expect(snap.entities).toEqual([]);
+    expect(snap.owner).toMatchObject({ id: 9, kind: 'boss', dist: 40 });
+  });
+
+  it('gives no owner when they are not being tracked, or none is configured', () => {
+    const bot = new FakeBot();
+    bot.players.Boss = { entity: null };
+    expect(readSnapshot(bot, {}, 0, 'Boss').owner).toBeNull();
+    expect(readSnapshot(bot, {}, 0, 'Nobody').owner).toBeNull();
+    expect(readSnapshot(bot, {}, 0).owner).toBeNull();
+  });
+});

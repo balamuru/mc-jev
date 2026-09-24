@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Phases 0-2 are done: scaffolding and config, connection and perception, and a rules-only reflex layer that fights hostile mobs. Phase 2.5 (survival hardening: no eating near hostiles, danger-based retreat, retreat-failure detection, survival benchmark) is next, and Jev (Phase 3) is not wired in yet. `docs/phases.md` is the source of truth for scope and status, and `docs/requirements.md` lists the functional requirements (FR-1 to FR-11).
+Phases 0-4 are done: scaffolding and config, connection and perception, the rules-based reflex layer, survival hardening, the Jev strategic layer, and modes with owner chat commands. Next is Phase 5 (player combat), then Phase 6 (multiple bots and swarms) and Phase 7 (tuning). `docs/phases.md` is the source of truth for scope and status, and `docs/requirements.md` lists the functional requirements (FR-1 to FR-12).
 
 ## Commands
 
@@ -17,7 +17,9 @@ npm run lint                       # ESLint
 npm run typecheck                  # tsc --noEmit
 npm run format                     # Prettier (CI runs `format:check`)
 npm run check                      # lint + typecheck + tests
-npm run test:integration           # opt-in; starts its own flat-world Paper servers (ports 25598/25599)
+npm run test:integration           # opt-in; starts throwaway flat-world Paper servers (ports 25596-25599)
+npm run test:live                  # opt-in; a few real Jev calls with the key in .env (fractions of a cent)
+npm run benchmark:survival         # opt-in; ~15 min; survival rate per fight scenario (see docs/survival-benchmark.md)
 ```
 
 ## Architecture
@@ -25,16 +27,19 @@ npm run test:integration           # opt-in; starts its own flat-world Paper ser
 The full write-up is in `docs/architecture.md`. The parts that need reading across files:
 
 - **Two layers per bot.** The reflex layer (`src/reflex/`) runs deterministic rules every `reflex.everyTicks` game ticks (50ms each) and never waits on I/O. The strategic layer (`src/strategic/`) asks Jev for a decision every `strategic.intervalMs` and on trigger events, and the result becomes the bot's current Intent. The reflex layer follows that Intent.
-- **Jev never runs inside a game tick.** A call takes roughly 70–500ms. Each bot has one call in flight at a time, and a newer call cancels the older one with `AbortSignal`. On timeout, error, rate limit, exhausted budget or low confidence, the rules decide.
+- **Jev never runs inside a game tick.** A call takes about 270ms (measured). Each bot has one call in flight at a time, and a newer call cancels the older one with `AbortSignal`. On timeout, error, rate limit, exhausted budget or low confidence, the rules decide.
 - **All bots share one `JevGateway`** (global `maxCallsPerMinute` and `dailyBudgetUsd`). Each bot is a self-contained `BotAgent` with no global state, so several can run in one process. Swarm messages go through a `Bus` interface (`InProcessBus` first, so NATS can replace it later), with a shared `Blackboard`.
 - **Keep the core logic pure** (observe, policy, rules, scheduler, commands, gateway, bus) so it can be unit tested without a Minecraft server.
 - **Jev questions and confidence thresholds live in one versioned module**, `src/strategic/questions.ts`.
 - **Safety rules live in code, not in Jev.** For example, a bot never attacks its owner or an allowlisted player.
 - **Perception is pure.** `src/perception/observe.ts` turns plain data into a `Snapshot`, and `src/agent/mineflayerAdapter.ts` is the only place that reads a Mineflayer bot. Bots are typed through the structural `BotLike` interface, so tests use `test/fakeBot.ts` instead of a server.
-- **Rules are the fallback policy.** `src/reflex/rules.ts` maps a `Snapshot` (plus the previous `Intent`) to a new `Intent`: engage the nearest visible hostile, or retreat at low HP with hysteresis. `ReflexLoop` (`src/reflex/loop.ts`) applies intents through an `Actuator` interface, and `MineflayerActuator` (`src/agent/actuator.ts`) is the real implementation using pathfinder. Phase 3 will feed Jev's answers in through `ReflexLoop.setOverride`.
+- **Rules are the fallback policy.** `src/reflex/rules.ts` maps a `Snapshot` (plus the previous `Intent`) to an `Intent`: engage the nearest visible non-neutral hostile. **Retreating is off by default (`rules.retreat: false`)**: `docs/survival-benchmark.md` shows a bot that fights on survives far more often than one that flees, because our retreat has no safe destination. The danger estimate (`src/reflex/danger.ts`, calibrated on the benchmark), retreat hysteresis and failed-retreat detection remain, tested, for when it is switched on. `ReflexLoop` applies intents through an `Actuator`, and `MineflayerActuator` (`src/agent/actuator.ts`) is the real one.
+- **Who decides each reflex step:** a fight-back after a failed retreat, else Jev's override (`ReflexLoop.setOverride`), else the current mode (`ModeController` in `src/control/modes.ts`, which uses the rules for combat). Intents are `idle`, `engage`, `retreat`, `follow` and `goto`.
+- **Strategic layer** (`src/strategic/`): `layer.ts` schedules and applies decisions, `gateway.ts` is the shared limiter (rate, daily budget, cooldowns, one call per bot), `jev.ts` wraps the SDK, `questions.ts` builds the versioned question set, `policy.ts` merges Jev with the rules (Jev can add caution freely, but cannot remove it at critical HP). Every decision goes to `logs/decisions-*.jsonl`.
+- **Chat commands** (`src/control/commands.ts`): exact-match, owner-only. The owner is looked up directly through `bot.players` so following works beyond the perception radius.
 - **No `mineflayer-pvp`.** It is unmaintained and relies on the deprecated `physicTick` event, so combat (aim, reach check, weapon cooldown) is our own code in `MineflayerActuator`. Pathfinder, auto-eat and armor-manager are used; armor-manager only reacts to picked-up items, so `attachPlugins` also re-checks armor when an armor item enters the inventory.
 - **`mineflayer-pathfinder` is loaded with `createRequire`** because Node's ESM loader does not expose its `goals` export.
-- **Integration tests** (`test/integration/`) start a throwaway Paper server in `server/it-<port>/` (fresh flat world at night, reusing the cache from `server/`) and drive it through its console, e.g. `execute at <bot> run summon zombie ~6 ~ ~`. Run `./scripts/server.sh` once first so `server/` has the EULA and cache. On this server version, gamerules use `advance_time`, not `doDaylightCycle`.
+- **Integration tests** (`test/integration/`) start a throwaway Paper server in `server/it-<port>/` (fresh flat world at night, natural regeneration off, reusing the cache from `server/`) and drive it through its console, e.g. `execute at <bot> run summon zombie ~6 ~ ~`. Use `execute at X run tp X ~N ~ ~`: with `execute as`, `~` is relative to the console, not to X. Run `./scripts/server.sh` once first so `server/` has the EULA and cache. On this server version, gamerules use `advance_time`, not `doDaylightCycle`.
 - **Mineflayer yaw convention:** 0 faces -Z and positive turns left. `relativeYaw` in `src/perception/geometry.ts` depends on it.
 
 ## Jev access

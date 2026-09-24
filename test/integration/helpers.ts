@@ -21,6 +21,9 @@ export async function waitFor<T>(
 
 const baseConfig = parseConfig(JSON.parse(readFileSync('config/default.json', 'utf8')));
 
+/** The default settings of the first bot in config/default.json. */
+export const botDefaults = baseConfig.bots[0]!;
+
 /** A unique bot name so reruns never collide with a lingering session. */
 export function botName(prefix: string): string {
   return `${prefix}${Math.random().toString(36).slice(2, 7)}`;
@@ -51,8 +54,12 @@ export function makeAgent(
   return { agent, logs };
 }
 
-/** Prepare a flat night-time world with no natural mob spawns, so fights are deterministic. */
+/**
+ * Prepare a flat night-time world with no natural mob spawns and no natural healing, so fights
+ * are deterministic and a wounded bot stays wounded.
+ */
 export async function calmNight(server: TestServer): Promise<void> {
   await server.run('gamerule advance_time false');
   await server.run('time set night');
+  await server.run('gamerule natural_health_regeneration false');
 }

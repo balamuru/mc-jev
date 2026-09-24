@@ -44,3 +44,13 @@ export function attackSpeed(itemName: string | null | undefined): number {
 export function cooldownTicks(itemName: string | null | undefined): number {
   return Math.ceil(20 / attackSpeed(itemName));
 }
+
+/** Melee damage of a fully charged hit (Java Edition), before the target's armor. */
+export function weaponDamage(itemName: string | null | undefined): number {
+  if (!itemName) return 1;
+  const tier = TIERS.findIndex((t) => itemName.startsWith(`${t}_`));
+  if (tier >= 0 && itemName.endsWith('_sword')) return [4, 4, 5, 6, 7, 8][tier] as number;
+  if (tier >= 0 && itemName.endsWith('_axe')) return [7, 7, 9, 9, 9, 10][tier] as number;
+  if (itemName === 'trident') return 9;
+  return 1;
+}

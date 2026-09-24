@@ -13,6 +13,11 @@ const reflexSchema = z.object({
 
 /** Deterministic combat and survival rules. They are also the fallback when Jev is unavailable. */
 const rulesBaseSchema = z.object({
+  /**
+   * Allow retreating at all. Off by default: with no safe place to run to, the survival benchmark
+   * shows a bot that fights on survives more often than one that flees (docs/survival-benchmark.md).
+   */
+  retreat: z.boolean(),
   /** At or below this many HP (of 20) the bot retreats from hostiles instead of fighting. */
   retreatHp: z.number().min(0).max(20),
   /** After retreating, the bot resumes fighting only once it has regained this many HP. */
@@ -21,12 +26,24 @@ const rulesBaseSchema = z.object({
   engageRadiusBlocks: z.number().min(1).max(64),
   /** Start eating when food falls below this level (of 20). */
   eatBelowFood: z.number().min(0).max(20),
+  /** Do not eat while a hostile is within this many blocks: eating slows you and cancels sprinting. */
+  noEatRadiusBlocks: z.number().min(0).max(64),
+  /** Fight only if the expected damage taken is below this fraction of current HP; otherwise retreat. */
+  dangerMargin: z.number().min(0.1).max(2),
+  /** A retreat is judged every this many milliseconds... */
+  retreatCheckMs: z.number().int().min(250),
+  /** ...and has failed if the distance to the threat grew by less than this many blocks. */
+  retreatMinGainBlocks: z.number().min(0).max(20),
+  /** After a failed retreat, fight back for this long before the rules decide again. */
+  fightBackMs: z.number().int().min(0),
 });
 const rulesSchema = rulesBaseSchema.refine((r) => r.retreatHp <= r.resumeHp, {
   message: 'retreatHp must be <= resumeHp',
 });
 
 const strategicSchema = z.object({
+  /** Ask Jev for decisions. When false (or with no API key) the rules decide alone. */
+  enabled: z.boolean(),
   /** Periodic strategic decision interval. */
   intervalMs: z.number().int().min(100),
   /** Events that trigger an immediate strategic decision. */
@@ -87,12 +104,16 @@ const serverSchema = z.object({
 const debugSchema = z.object({
   /** Print each bot's snapshot this often; 0 turns it off. */
   snapshotIntervalMs: z.number().int().min(0),
+  /** Directory for the JSONL log of Jev decisions. An empty string turns the log off. */
+  decisionLogDir: z.string(),
 });
 
 const botEntrySchema = z.object({
   username: z.string().regex(/^\w{3,16}$/, 'Minecraft usernames are 3-16 letters, digits or _'),
   role: z.enum(['fighter', 'tank', 'ranged', 'support', 'scout']).default('fighter'),
   owner: z.string().optional(),
+  /** What the bot does on its own until its owner gives an order: hold and fight what comes (guard), seek out hostiles (hunt), or do nothing (idle). */
+  mode: z.enum(['guard', 'hunt', 'idle']).default('guard'),
   /** Per-bot overrides of `defaults`. */
   overrides: z
     .object({
@@ -124,6 +145,7 @@ export interface BotConfig extends AgentSettings {
   username: string;
   role: ConfigFile['bots'][number]['role'];
   owner?: string;
+  mode: ConfigFile['bots'][number]['mode'];
 }
 
 export interface Config {
@@ -165,7 +187,13 @@ export function parseConfig(raw: unknown, env: NodeJS.ProcessEnv = {}): Config {
         thresholds: { ...file.defaults.jev.thresholds, ...o.jev?.thresholds },
       },
     });
-    return { username: entry.username, role: entry.role, owner: entry.owner, ...settings };
+    return {
+      username: entry.username,
+      role: entry.role,
+      owner: entry.owner,
+      mode: entry.mode,
+      ...settings,
+    };
   });
 
   return {
