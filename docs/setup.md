@@ -1,72 +1,223 @@
 # Setup
 
-This guide takes you from a fresh clone to a running bot. The bot connects to a Minecraft server you run on your own machine, and it can use Jev (through OpenRouter) to make its decisions.
+This guide takes you from nothing to watching your own AI bots fight in Minecraft, standing next to them in the game. It covers the tools to install, the local Minecraft server, the Minecraft game client, the bots, and the tests.
 
-## Prerequisites
+## What you will run
 
-| Tool               | Version                  | Used for                                   |
-| ------------------ | ------------------------ | ------------------------------------------ |
-| Node.js            | 20 or newer (CI uses 22) | Running the bot and the tests              |
-| Java               | 21 or newer              | Running the local Paper server             |
-| OpenRouter API key | —                        | Optional: without one, bots use rules only |
+Three programs, all on your own machine:
 
-## 1. Install
+```
+ ┌───────────────────────┐        ┌──────────────────────────────┐
+ │ Minecraft game client │        │ mc-jev (npm run dev)         │
+ │ (you, playing)        │        │ one Mineflayer bot per entry │
+ └──────────┬────────────┘        │ in config, plus Jev calls ───┼──► OpenRouter (optional)
+            │                     └──────────────┬───────────────┘
+            │  localhost:25565                   │  localhost:25565
+            ▼                                    ▼
+ ┌─────────────────────────────────────────────────────────────┐
+ │ Paper server (./scripts/server.sh), Minecraft 26.1.2        │
+ │ online-mode=false, listening on 127.0.0.1 only              │
+ └─────────────────────────────────────────────────────────────┘
+```
+
+- **The server** is the world. The bots and you are all players on it.
+- **The bots** are programs that log in as players. They need no Minecraft account.
+- **The game client** is optional: without it the bots still run, and you follow them in the terminal. With it you can watch them, fight next to them and give them orders in chat.
+
+## 1. Install the tools
+
+| Tool                     | Version                        | Needed for                                          |
+| ------------------------ | ------------------------------ | --------------------------------------------------- |
+| Node.js                  | 20 or newer (CI uses 22)       | The bots, the tests and the benchmarks              |
+| Java                     | **25** or newer                | The Paper server for Minecraft 26.1.2               |
+| git, curl, python3, bash | any recent                     | Cloning, and `scripts/server.sh`                    |
+| Minecraft: Java Edition  | a copy you own, version 26.1.2 | Optional: joining the world yourself (see step 5)   |
+| OpenRouter API key       | —                              | Optional: without it the bots decide by rules alone |
+
+**Linux (Debian or Ubuntu):**
+
+```bash
+# Node.js from NodeSource (or use nvm)
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs git curl python3
+# Java 25: from your distribution if it has it, otherwise Eclipse Temurin (https://adoptium.net)
+sudo apt install -y openjdk-25-jre-headless
+```
+
+**macOS (Homebrew):**
+
+```bash
+brew install node git python
+brew install --cask temurin     # the current Temurin JDK (25 or newer)
+brew install coreutils   # only if `sha256sum` is missing (older macOS)
+```
+
+**Windows:** use WSL2 (Ubuntu), and follow the Linux steps inside it. `scripts/server.sh` is a bash script. WSL2 forwards `localhost` to Windows by default, so the Minecraft client on Windows can join a server running in WSL.
+
+Check the versions:
+
+```bash
+node --version    # v20 or newer
+java -version     # 25 or newer
+```
+
+## 2. Get the code
 
 ```bash
 git clone git@github.com:balamuru/mc-jev.git
 cd mc-jev
 npm install
+npm run check     # lint, typecheck and the unit tests: should pass before you go further
 ```
 
-## 2. Add your Jev key
+## 3. Add your Jev key (optional)
 
-Jev runs through OpenRouter:
+Jev makes the bots' judgment calls, through OpenRouter. Without a key the bots still fight, using their rules.
 
-1. Copy the example file: `cp .env.example .env`.
-2. Edit `.env` so it contains:
+```bash
+cp .env.example .env
+```
 
-   ```bash
-   TYPESAFE_API_KEY=<your OpenRouter key>
-   TYPESAFE_BASE_URL=https://openrouter.ai/api
-   ```
+Then edit `.env`:
 
-- **Keep `.env` private:** it is gitignored. Never commit it, and don't paste the key into issues or chat.
-- **Without a key:** leave `TYPESAFE_API_KEY` empty, and every bot runs on its rules alone.
-- **Using TypeSafe directly instead:** set `TYPESAFE_API_KEY` to a TypeSafe key and remove `TYPESAFE_BASE_URL`.
+```bash
+TYPESAFE_API_KEY=<your OpenRouter key>
+TYPESAFE_BASE_URL=https://openrouter.ai/api
+```
 
-## 3. Start a local Minecraft server
+- **Keep `.env` private.** It is gitignored. Never commit it, and don't paste the key into issues or chat.
+- **Cost:** about $0.00003 per Jev call, under $0.06 an hour per bot in a constant fight. `gateway.dailyBudgetUsd` (default $1) stops all calls for the day once reached.
+- **Using TypeSafe directly instead of OpenRouter:** put a TypeSafe key in `TYPESAFE_API_KEY` and remove `TYPESAFE_BASE_URL`.
+
+## 4. Start the Minecraft server
+
+Open a terminal for the server and keep it open:
 
 ```bash
 ./scripts/server.sh
 ```
 
-The script:
+The first time, the script:
 
-- downloads Paper into `server/` and verifies its checksum. The default version is 26.1.2, which is within the newest version Mineflayer supports (26.1). Override it with `MC_VERSION`.
-- asks you before accepting the Minecraft EULA (https://aka.ms/MinecraftEULA)
-- sets `online-mode=false` so bots can join without Mojang accounts
+1. looks up the latest Paper build for Minecraft 26.1.2, downloads it into `server/` and checks its SHA-256 checksum;
+2. writes `server/server.properties` for bot experiments: `online-mode=false` (bots have no accounts), `server-ip=127.0.0.1` (this machine only), port 25565, normal difficulty, no spawn protection;
+3. asks you to accept the Minecraft EULA (https://aka.ms/MinecraftEULA). Type `yes` to accept; the server does not start otherwise;
+4. starts the server. The first start generates the world and takes a minute. It is ready when it prints `Done (…s)! For help, type "help"`.
 
-To download without starting the server, run `./scripts/server.sh --download-only`. `MC_MEMORY` sets the Java heap size (default `2G`). Leave the server running in its own terminal while you run the bot.
+Later runs reuse the download, settings, EULA answer and world, and start in a few seconds.
 
-**Do not expose this server to the internet.**
+**Server console.** The terminal running the server is its console. Commands typed there run with full permission, without a leading `/`:
 
-## 4. Run the bot
+| Command                                    | Effect                                                                                           |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `stop`                                     | Save the world and shut the server down. Always stop it this way rather than closing the window. |
+| `op <your name>`                           | Let yourself use commands in the game (type them in chat with a leading `/`).                    |
+| `list`                                     | Who is online, bots included.                                                                    |
+| `time set night`, `time set day`           | Hostile mobs spawn at night.                                                                     |
+| `difficulty peaceful`, `difficulty normal` | Peaceful removes hostile mobs altogether.                                                        |
+
+**Options:**
+
+- `MC_MEMORY=4G ./scripts/server.sh` sets the Java heap (default `2G`).
+- `MC_VERSION=<version> ./scripts/server.sh` runs another Minecraft version. The bots support up to 26.1 (Mineflayer 4.39), so leave this alone unless Mineflayer is upgraded.
+- `./scripts/server.sh --download-only` downloads and configures without starting.
+- Your edits to `server/server.properties` are kept: the script only writes it when it is missing.
+
+**A fresh world:** stop the server, delete the world folders (`rm -rf server/world*`), and start it again.
+
+**Safety:** the server accepts anyone with any name, because `online-mode=false`. It listens on `127.0.0.1` only, so nothing outside your machine can reach it. **Never expose it to the internet** (no port forwarding, no `server-ip=0.0.0.0` on a public network).
+
+## 5. Set up the Minecraft game client (optional)
+
+You need Minecraft: Java Edition (not Bedrock), bought through https://www.minecraft.net, and the Minecraft Launcher.
+
+1. **Match the server's version.** In the launcher, open **Installations → New installation**, choose version **release 26.1.2**, and save. Play with that installation: a client on a different version cannot join (the server says "Outdated client" or "Outdated server").
+2. **Launch the game** with that installation and choose **Multiplayer → Add Server**. Server address: `localhost` (the port 25565 is the default). Save, then join.
+3. **Your name is your account's Minecraft name.** The server is in offline mode, so it takes your name without checking it. Note it exactly: you need it as the bots' owner in step 6.
+4. **Make yourself an operator,** in the server console: `op <your name>`. Then, in the game, `/gamemode creative` makes you fly and hostile mobs ignore you, which is the easiest way to watch a fight. `/gamemode survival` puts you back in danger.
+
+Joining from another computer on your home network is possible (set `server-ip` in `server/server.properties` to your machine's LAN address and allow port 25565 through its firewall), but anyone on that network can then join under any name. Don't do it on a network you don't trust.
+
+## 6. Configure your bots
+
+The bots are listed in `config/default.json` under `bots`. To keep your own settings out of git, copy it and point the bots at the copy:
+
+```bash
+cp config/default.json config/local.json      # config/local*.json is gitignored
+echo 'MC_JEV_CONFIG=config/local.json' >> .env
+```
+
+Then edit the `bots` list in `config/local.json`. At the least, set yourself as the owner, so the bots take your orders and never attack you:
+
+```json
+"bots": [
+  { "username": "JevBot", "owner": "YourMinecraftName" }
+]
+```
+
+| Field      | Meaning                                                                                                                                            |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `username` | The bot's in-game name: 3 to 16 letters, digits or `_`, and not a name already on the server (not yours).                                          |
+| `owner`    | Your Minecraft name. The owner gives orders in chat and is never attacked. Without an owner, a bot obeys nobody.                                   |
+| `mode`     | What the bot does on its own: `guard` (default: fight what comes near), `hunt` (seek out hostiles) or `idle`.                                      |
+| `role`     | In a squad: `fighter` (default), `tank`, `support`, `scout` or `ranged` (see [architecture.md](architecture.md#roles-botsrole-srccontrolrolests)). |
+| `allies`   | Other players the bot must never attack.                                                                                                           |
+
+For a squad, add more entries, each with its own `username`. They share one Jev budget, and by default they cooperate (claim different targets, help a hurt ally). Every other setting is in the [configuration reference](#configuration-reference-configdefaultjson) below.
+
+## 7. Start the bots
+
+In a second terminal:
 
 ```bash
 npm run dev
 ```
 
-This prints each bot's settings, connects every bot in `config/default.json` to the server, and prints what each one perceives once a second:
+It prints the setup, then each bot's view of the world once a second:
 
 ```
+mc-jev: server localhost:25565
+Jev: key present via https://openrouter.ai/api
+bot JevBot (fighter, guard): reflex every 50ms, strategic every 2000ms, Jev timeout 1000ms
 [JevBot] hp 20 food 20 at (12, 64, -3) holding empty hand | zombie 5.2m ahead approaching, Steve 12.0m left
 ```
 
-If the server goes away, bots reconnect with exponential backoff (1s up to 30s). Press Ctrl+C to stop them. To use a different config file, set `MC_JEV_CONFIG=path/to/config.json`.
+- In the game, the server announces `JevBot joined the game`, and the bot appears near the world spawn.
+- If the server is not running yet, or restarts, the bots keep retrying (1 second, doubling up to 30 seconds).
+- **Ctrl+C** stops the bots and prints the Jev usage: calls, failures and dollars spent.
+- Every Jev decision goes to `logs/decisions-YYYY-MM-DD.jsonl` (see [Decision log](#decision-log)).
+
+## 8. Watch them fight, and give orders
+
+**Arm the bots,** from the server console (or in the game with a leading `/`, once you are an operator):
+
+```
+give JevBot iron_sword
+give JevBot iron_helmet
+give JevBot iron_chestplate
+give JevBot iron_leggings
+give JevBot iron_boots
+give JevBot bow
+give JevBot arrow 64
+give JevBot bread 16
+```
+
+The bot wears armor as soon as it gets it, fights with its best weapon, shoots with a bow at range, and eats when hungry.
+
+**Start a fight:**
+
+```
+execute at JevBot run summon zombie ~8 ~ ~
+execute at JevBot run summon skeleton ~12 ~ ~
+execute at JevBot run summon creeper ~10 ~ ~
+time set night
+```
+
+In the console, `~` needs `execute at <someone>` to know where "here" is.
+
+**Give orders** by typing in the game's chat (press `T`). Only the bot's owner is obeyed:
 
 ### Chat commands
-
-Bots run on their own by default, fighting the hostile mobs that come near. A bot's owner can type these in chat to give it orders. Set the owner in `config/default.json` with `bots[].owner` (your Minecraft name):
 
 | Command                   | Effect                                                                                                                                                                        |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -84,7 +235,7 @@ Bots run on their own by default, fighting the hostile mobs that come near. A bo
 - **Never attacked.** The owner, `bots[].allies` and other bots in the config are never attacked, even if they hit the bot. See [architecture.md](architecture.md#player-combat).
 - **Default mode.** `bots[].mode` is what a bot does until it is told otherwise: `guard` (the default: hold position and fight what comes near), `hunt`, or `idle` (do nothing).
 
-## 5. Tests and checks
+## 9. Tests and checks
 
 ```bash
 npm test                          # unit tests (no server needed)
@@ -243,11 +394,21 @@ Example: two bots, where the second decides more often and needs more confidence
 
 ## Troubleshooting
 
-| Symptom                                         | Fix                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Invalid config: …` at startup                  | The message names the bad field. Check it against the configuration reference above.                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `Jev: no key, so the bots run on rules only`    | `.env` is missing, or `TYPESAFE_API_KEY` is empty in it.                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `Jev unavailable (auth…)` or a 401              | Check the key, and that `TYPESAFE_BASE_URL` matches where the key came from (OpenRouter or TypeSafe).                                                                                                                                                                                                                                                                                                                                                                                            |
-| Jev returns 429 or 529, or calls time out often | Raise `strategic.intervalMs` or `jev.timeoutMs`, or lower `gateway.maxCallsPerMinute`. Bots fall back to rules in the meantime.                                                                                                                                                                                                                                                                                                                                                                  |
-| Bot can't join the server                       | Check that the server is running with `online-mode=false`, and that `server.version` matches it or is `false`.                                                                                                                                                                                                                                                                                                                                                                                   |
-| `npm audit` reports 8 moderate warnings         | Known and harmless here. They are all one advisory in `uuid` (a missing bounds check when a caller passes its own buffer to `v3`, `v5` or `v6`), pulled in by `yggdrasil` and `@azure/msal-node`, which Mineflayer uses only to log in to online-mode servers. Offline bots never call them, and neither library passes a buffer. The only "fix" npm offers is downgrading Mineflayer to 1.4.0, so leave it until Mineflayer updates its dependencies (4.39.0, the version used, is the latest). |
+| Symptom                                                                                  | Fix                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Invalid config: …` at startup                                                           | The message names the bad field. Check it against the configuration reference above.                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `Jev: no key, so the bots run on rules only`                                             | `.env` is missing, or `TYPESAFE_API_KEY` is empty in it.                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `Jev unavailable (auth…)` or a 401                                                       | Check the key, and that `TYPESAFE_BASE_URL` matches where the key came from (OpenRouter or TypeSafe).                                                                                                                                                                                                                                                                                                                                                                                            |
+| Jev returns 429 or 529, or calls time out often                                          | Raise `strategic.intervalMs` or `jev.timeoutMs`, or lower `gateway.maxCallsPerMinute`. Bots fall back to rules in the meantime.                                                                                                                                                                                                                                                                                                                                                                  |
+| `./scripts/server.sh` fails with `UnsupportedClassVersionError`, or says Java is too old | Minecraft 26.1.2 needs Java 25 or newer. Check `java -version`; if several are installed, put Java 25 first on your `PATH` (or set `JAVA_HOME`).                                                                                                                                                                                                                                                                                                                                                 |
+| The server stops right after starting and mentions the EULA                              | Run `./scripts/server.sh` again and type `yes` at the EULA question.                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `Failed to bind to port` when the server starts                                          | Another server is already on port 25565 (often an earlier one still running). Stop it, or change `server-port` in `server/server.properties` and `server.port` in the bots' config.                                                                                                                                                                                                                                                                                                              |
+| The game client says "Can't connect to server" or "Connection refused"                   | The server is not running, or not finished starting (wait for `Done`). The address is `localhost`, on the same machine.                                                                                                                                                                                                                                                                                                                                                                          |
+| The game client says "Outdated client" or "Outdated server"                              | Play with a launcher installation set to exactly release 26.1.2 (step 5).                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| The game client says "Failed to verify username"                                         | `server/server.properties` has `online-mode=true`. Set it back to `false` and restart the server.                                                                                                                                                                                                                                                                                                                                                                                                |
+| A bot keeps getting kicked with "You logged in from another location"                    | Two players with the same name: a bot's `username` is the same as yours or another bot's. Give each a unique name.                                                                                                                                                                                                                                                                                                                                                                               |
+| The bot ignores your chat commands                                                       | Check that `owner` in the bot's config is exactly your Minecraft name, and that the message is exactly a command (`follow`, not `follow me please`). Nobody else is obeyed.                                                                                                                                                                                                                                                                                                                      |
+| Bots don't attack you even when you hit them                                             | By design: the owner, `allies` and other bots are never attacked. Anyone else who hits a bot is fought back.                                                                                                                                                                                                                                                                                                                                                                                     |
+| Hostile mobs never show up                                                               | It is day, or the difficulty is peaceful. In the console: `time set night`, `difficulty normal`, or summon one (step 8).                                                                                                                                                                                                                                                                                                                                                                         |
+| Bot can't join the server                                                                | Check that the server is running with `online-mode=false`, and that `server.version` matches it or is `false`.                                                                                                                                                                                                                                                                                                                                                                                   |
+| `npm audit` reports 8 moderate warnings                                                  | Known and harmless here. They are all one advisory in `uuid` (a missing bounds check when a caller passes its own buffer to `v3`, `v5` or `v6`), pulled in by `yggdrasil` and `@azure/msal-node`, which Mineflayer uses only to log in to online-mode servers. Offline bots never call them, and neither library passes a buffer. The only "fix" npm offers is downgrading Mineflayer to 1.4.0, so leave it until Mineflayer updates its dependencies (4.39.0, the version used, is the latest). |

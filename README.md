@@ -23,14 +23,14 @@ npm run check           # lint + typecheck + unit tests
 npm run test:integration  # fights on throwaway local servers (run ./scripts/server.sh once first)
 ```
 
-Node.js 20 or newer is required, and Java 21 or newer for the local server (`./scripts/server.sh`).
+Node.js 20 or newer is required, and Java 25 or newer for the local server (`./scripts/server.sh`). [docs/setup.md](docs/setup.md) walks through everything, including the server and joining the world with the Minecraft client.
 
 ## Documentation
 
-| Doc                                                      | Contents                                                         |
-| -------------------------------------------------------- | ---------------------------------------------------------------- |
-| [docs/setup.md](docs/setup.md)                           | Installation, keys, running the server and bot, config reference |
-| [docs/architecture.md](docs/architecture.md)             | Two-layer design, timing rules, swarms, Jev integration, cost    |
-| [docs/requirements.md](docs/requirements.md)             | Functional requirements (FR-1 to FR-11)                          |
-| [docs/survival-benchmark.md](docs/survival-benchmark.md) | Survival benchmark: method, results and what they mean           |
-| [docs/phases.md](docs/phases.md)                         | Delivery phases, with scope and tests for each                   |
+| Doc                                                      | Contents                                                                |
+| -------------------------------------------------------- | ----------------------------------------------------------------------- |
+| [docs/setup.md](docs/setup.md)                           | Step by step: tools, server, game client, bots, tests, config reference |
+| [docs/architecture.md](docs/architecture.md)             | Two-layer design, timing rules, swarms, Jev integration, cost           |
+| [docs/requirements.md](docs/requirements.md)             | Functional requirements (FR-1 to FR-11)                                 |
+| [docs/survival-benchmark.md](docs/survival-benchmark.md) | Survival benchmark: method, results and what they mean                  |
+| [docs/phases.md](docs/phases.md)                         | Delivery phases, with scope and tests for each                          |

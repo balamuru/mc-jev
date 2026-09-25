@@ -6,3 +6,4 @@ server/
 logs/
 coverage/
 *.log
+config/local*.json
