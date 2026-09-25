@@ -27,7 +27,7 @@ The snapshot contains:
 - **Nearby entities**: kind, distance, direction, whether they are approaching, held item.
 - **Environment**: terrain flags and an inventory summary.
 
-Entities outside line of sight or field of view can be filtered out. This is a setting.
+Entities outside line of sight or field of view can be filtered out. This is a setting (`perception.requireLineOfSight`, `perception.fovDegrees`), and an integration test checks both on a real server: a zombie behind a stone wall disappears and comes back when the wall goes, and one behind a bot with a 90-degree view disappears.
 
 ### FR-3 Reflex layer
 

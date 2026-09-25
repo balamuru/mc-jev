@@ -135,6 +135,8 @@ The `ranged` role needs a bot that can fight with a bow. It is also useful on it
 - **CI:** bump `actions/checkout` and `actions/setup-node` to their current major versions, and pin `runs-on` so the Ubuntu 26 switch doesn't happen unannounced.
 - **npm audit:** check whether a newer Mineflayer resolves the 6 moderate warnings. If it doesn't, document why they don't apply (they are in the online-mode authentication path, which offline bots never use) and leave them.
 
+**Result (done 2026-09-24):** a line-of-sight and field-of-view test on real terrain (a `/fill` wall, and turning away), and a duel between bots from two separate apps with both owners online and unhurt. The optional duel benchmark was not built. CI actions moved to v7 on a pinned `ubuntu-24.04` runner. The `npm audit` warnings (now 8, all one `uuid` advisory in the online-login libraries) are documented and left, because Mineflayer 4.39.0 is the latest. The intermittent combat failure did not recur in 12 full-suite runs; its failure output now includes the bot's state.
+
 ## Order and size
 
 | Phase                               | Size                                                                                                       | Depends on                                                 |

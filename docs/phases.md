@@ -16,7 +16,7 @@ Each phase ends with `npm run check` passing, the phase's integration scenario w
 | 8     | Shield and strafing against mobs              | FR-3             | Done   |
 | 9     | Bow combat                                    | FR-3             | Done   |
 | 10    | Roles that change behavior                    | FR-11            | Done   |
-| 11    | Test coverage and housekeeping                | FR-2, FR-7       | Next   |
+| 11    | Test coverage and housekeeping                | FR-2, FR-7       | Done   |
 
 ## Phase 0: Repo and scaffolding
 
@@ -144,6 +144,14 @@ Phases 8 to 11 close the gaps a review of the implementation against the plan fo
 - **Deviations from the plan:** the tank does not keep its shield up, because Phase 8 left shields off. The scout does not wait before engaging: its report is sent synchronously in the same step, so a delay would add nothing.
 - **Tests:** unit tests for each role, the member's role and reporting, mode and loop integration, the coordinator's role questions, parsing, thresholds, fallback and expiry, and an integration test on a real server in which a coordinated squad without Jev gets roles by gear, the tank covers a hurt ally, and the ranged bot backs away and shoots.
 - **Result:** with Jev, roles cut squad damage by a quarter (27.2 → 20.3) with no deaths; without Jev they made no measurable difference (24.0 → 23.0). Both meet the rule, so `assignRoles` ships on. Roles make clearing about half again slower. See [tuning.md](tuning.md#roles-phase-10).
+
+## Phase 11: Test coverage and housekeeping
+
+- **Line of sight and field of view on real terrain** (`test/integration/visibility.test.ts`): three observe-only bots face a zombie that cannot move. A stone wall built with `/fill` hides it from the bot that needs line of sight but not from the one without the filter, and it comes back when the wall is removed. A bot with a 90-degree view loses it on turning away and sees it again on turning back.
+- **Bot against bot** (`test/integration/duel.test.ts`): two bots from two separate apps, so neither protects the other, each with its owner online nearby. Neither attacks unprovoked; after a scripted hit (`/damage … by …`) the victim fights back, the other answers, and the duel ends in a death. The winner stops once the loser is gone, and neither owner loses any health. The optional 10-match benchmark (shield against no shield) was not built.
+- **CI:** `actions/checkout` and `actions/setup-node` moved to v7, and the runner is pinned to `ubuntu-24.04`.
+- **npm audit:** Mineflayer 4.39.0 is the latest, and the 8 moderate warnings all come from one `uuid` advisory in the online-login libraries, which offline bots never call. Documented in [setup.md](setup.md#troubleshooting) and left.
+- **The intermittent combat test:** not reproduced. After the starting-HP fix in Phase 8, the full integration suite passed 12 times in a row (8 of them in a loop for this purpose). The second failure was never captured, so its cause is unknown; it may have been the same uncontrolled starting HP. The test now prints the bot's intent, deaths and full snapshot when it fails, so a recurrence will show what happened.
 
 ## Backlog (not scheduled)
 

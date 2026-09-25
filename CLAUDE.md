@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Phases 0-10 are done (Phases 8-11 close gaps from a plan review, see `docs/plan-gap-closure.md`; 11 coverage and housekeeping is next): scaffolding and config, connection and perception, the rules-based reflex layer, survival hardening, the Jev strategic layer, modes with owner chat commands, player combat, multiple bots with swarms, and measurement-driven tuning. `docs/tuning.md` and `docs/survival-benchmark.md` record what the benchmarks showed; re-run them before changing a default. `docs/phases.md` is the source of truth for scope and status, and `docs/requirements.md` lists the functional requirements (FR-1 to FR-12).
+Phases 0-11 are done (Phases 8-11 closed the gaps a plan review found, see `docs/plan-gap-closure.md`): scaffolding and config, connection and perception, the rules-based reflex layer, survival hardening, the Jev strategic layer, modes with owner chat commands, player combat, multiple bots with swarms, and measurement-driven tuning. `docs/tuning.md` and `docs/survival-benchmark.md` record what the benchmarks showed; re-run them before changing a default. `docs/phases.md` is the source of truth for scope and status, and `docs/requirements.md` lists the functional requirements (FR-1 to FR-12).
 
 ## Commands
 
@@ -17,7 +17,7 @@ npm run lint                       # ESLint
 npm run typecheck                  # tsc --noEmit
 npm run format                     # Prettier (CI runs `format:check`)
 npm run check                      # lint + typecheck + tests
-npm run test:integration           # opt-in; starts throwaway flat-world Paper servers (ports 25593-25599)
+npm run test:integration           # opt-in; starts throwaway flat-world Paper servers (ports 25586-25599)
 npm run test:live                  # opt-in; a few real Jev calls with the key in .env (fractions of a cent)
 npm run benchmark:survival         # opt-in; ~15 min; survival rate per fight scenario (see docs/survival-benchmark.md); add --jev to use the real API
 npm run benchmark:squad            # opt-in; three bots vs a wave, per swarm mode (see docs/tuning.md)

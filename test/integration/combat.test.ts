@@ -8,6 +8,7 @@ import {
   waitFor,
   type TestAgent,
 } from './helpers.js';
+import { formatSnapshot } from '../../src/perception/format.js';
 import { type TestServer, startTestServer } from './serverHarness.js';
 
 let server: TestServer;
@@ -31,8 +32,17 @@ afterAll(async () => {
   await server?.stop();
 });
 
+// On failure, print what the bot was doing and seeing, not just its log: this test has failed
+// intermittently under full-suite load, and the state at the moment of failure is the clue.
 const dumpOnFailure = () =>
-  onTestFailed(() => console.log(`--- bot log ---\n${bot.logs.join('\n')}`));
+  onTestFailed(() => {
+    const snap = bot.agent.snapshot();
+    console.log(
+      `--- bot log ---\n${bot.logs.join('\n')}\n` +
+        `--- at failure ---\nintent: ${JSON.stringify(bot.agent.intent)}\n` +
+        `deaths: ${bot.agent.deaths}\nsnapshot: ${snap ? formatSnapshot(snap) : 'none'}`,
+    );
+  });
 
 describe('reflex layer on a real server', () => {
   it('puts on armor it is given', async () => {
