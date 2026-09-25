@@ -111,6 +111,7 @@ describe('reflex and rules settings', () => {
       shield: false,
       strafeMobs: false,
       bow: true,
+      creeperHitAndRun: true,
       bowMinBlocks: 6,
       bowMaxBlocks: 20,
       retreat: false,

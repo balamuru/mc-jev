@@ -84,6 +84,17 @@ The bow scenarios start the mob 16 blocks away, so there is room to shoot, and c
 - **The creeper gap is partly a melee weakness.** Without the bow, the bot sprints 16 blocks at the creeper, arrives with momentum right next to it, and the explosion kills it (`--trace` shows it dying about 3.4 seconds in, every time). In the 8-block `creeper` scenario the creeper walks to the bot instead, and the bot survives. Keeping away from creepers in melee is on the backlog under enemy-specific tactics.
 - **A bug the benchmark found.** The first run had 11 creeper and 6 skeleton timeouts, with no damage taken. An arrow's knockback pushed the target past `engageRadiusBlocks` (16), the rules stopped counting it as a threat, and the bot went idle while the mob wandered off. A bot that can shoot now keeps its current target out to `bowMaxBlocks`; the table above is the rerun. The first run passed the gate as well (20/20, 20/20 and 19/20 with the bow).
 
+## After Phase 11: hit and run against creepers
+
+Phase 9 found that a melee bot dies to a creeper that starts 16 blocks away: it sprints in, arrives right beside the creeper and is still there when it explodes. `rules.creeperHitAndRun` changes melee against a creeper to hit and back off: close in, swing once, back out past 7.5 blocks (beyond 7 blocks a creeper's fuse winds down) while the weapon recharges, and close in again (`src/reflex/creeper.ts`). A new scenario, `creeper-far`, reproduces the bug without a bow. 20 trials each way, run side by side on two servers.
+
+| Scenario                                         | On: survived | On: damage | Off: survived | Off: damage |
+| ------------------------------------------------ | ------------ | ---------- | ------------- | ----------- |
+| `creeper-far` (16 blocks, full HP, wooden sword) | 20/20        | 0.0 ± 0.0  | 4/20          | 18.6 ± 0.8  |
+| `creeper` (8 blocks, full HP, wooden sword)      | 20/20        | 0.0 ± 0.0  | 20/20         | 10.1 ± 0.3  |
+
+Every trial with it on was won without losing any health, so **`rules.creeperHitAndRun` ships on**. It only changes how the bot fights a creeper in melee; a bot with a bow still shoots creepers at range.
+
 ## Caveats
 
 - **Small samples.** With 8 trials, 75% against 88% is not a real difference, and neither are the end-HP differences in the creeper scenario (explosion damage is either large or nothing). Only the big gaps (25% against 88–100%) are trustworthy. Run `--trials 20` before drawing any finer conclusion.
@@ -105,6 +116,10 @@ npm run benchmark:survival -- --label retreat-off --rules '{"retreat":false}'
 # bow on and off (Phase 9)
 npm run benchmark:survival -- --scenarios creeper-bow,skeleton-bow,zombie-x3-bow --trials 20 --label bow-on --rules '{"bow":true}'
 npm run benchmark:survival -- --scenarios creeper-bow,skeleton-bow,zombie-x3-bow --trials 20 --label bow-off --rules '{"bow":false}'
+
+# creeper hit and run on and off
+npm run benchmark:survival -- --scenarios creeper-far,creeper --trials 20 --label cr-on --rules '{"creeperHitAndRun":true}'
+npm run benchmark:survival -- --scenarios creeper-far,creeper --trials 20 --label cr-off --rules '{"creeperHitAndRun":false}'
 
 # more trials for a single scenario
 npm run benchmark:survival -- --scenarios zombie-x3-lowhp --trials 20

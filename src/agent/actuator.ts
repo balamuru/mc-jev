@@ -22,6 +22,7 @@ import { Vec3 } from 'vec3';
 import { isProtectedPlayer } from '../reflex/protect.js';
 import { Strafer, pvpAction } from '../reflex/pvp.js';
 import type { Vec3Like } from '../perception/types.js';
+import { CREEPER_SAFE_BLOCKS, creeperStep, type CreeperMove } from '../reflex/creeper.js';
 import { bestWeapon, cooldownTicks } from '../reflex/weapons.js';
 import type { Actuator } from '../reflex/loop.js';
 
@@ -63,6 +64,8 @@ export interface ActuatorOptions {
   /** Shoot with a bow (if there is one, with arrows) at targets within `bowRange`. */
   bow?: boolean;
   bowRange?: BowRange;
+  /** Against a creeper in melee: swing once, then back out of blast range while recharging. */
+  creeperHitAndRun?: boolean;
 }
 
 /** Shots and the hits that followed them, for measuring bow accuracy. */
@@ -127,6 +130,9 @@ export class MineflayerActuator implements Actuator {
   private readonly protectedPlayers: readonly string[];
   private drawTicks = 0;
   private bowMode = false;
+  /** Hit-and-run against a creeper: still getting clear after a swing, and the current goal. */
+  private creeperBackingOff = false;
+  private creeperGoal: CreeperMove | null = null;
   private bowGoal: 'follow' | 'stand' | null = null;
   private targetHistory: Vec3Like[] = [];
   private lastShotAt = Number.NEGATIVE_INFINITY;
@@ -182,6 +188,8 @@ export class MineflayerActuator implements Actuator {
     this.bowMode = false;
     this.bowGoal = null;
     this.targetHistory = [];
+    this.creeperBackingOff = false;
+    this.creeperGoal = null;
     this.mode = 'engage';
     this.targetId = targetId;
     this.ticksSinceAttack = Number.POSITIVE_INFINITY; // strike as soon as in reach
@@ -225,6 +233,7 @@ export class MineflayerActuator implements Actuator {
   stop(): void {
     this.cancelDraw();
     this.bowMode = false;
+    this.creeperGoal = null;
     this.lowerShield();
     this.mode = 'idle';
     this.targetId = null;
@@ -287,6 +296,10 @@ export class MineflayerActuator implements Actuator {
       return;
     }
     const ready = this.ticksSinceAttack >= this.cooldown();
+    if (this.options.creeperHitAndRun && target.name === 'creeper') {
+      this.fightCreeper(target, dist, ready);
+      return;
+    }
     this.strafeMob(target, dist, ready, elapsedTicks);
     if (dist <= ATTACK_REACH_BLOCKS && ready) {
       this.lowerShield(); // you cannot swing while blocking
@@ -318,6 +331,7 @@ export class MineflayerActuator implements Actuator {
    */
   private shootBow(target: Entity, dist: number, range: BowRange, elapsedTicks: number): void {
     this.lowerShield(); // the bow needs the hands
+    this.creeperGoal = null; // the bow sets its own movement goals
     if (!this.bowMode) {
       this.bowMode = true;
       this.bowGoal = null;
@@ -465,6 +479,31 @@ export class MineflayerActuator implements Actuator {
     if (!this._blocking) return;
     this._blocking = false;
     this.bot.deactivateItem();
+  }
+
+  /** Hit and run against a creeper (`creeperStep`): never linger within its blast. */
+  private fightCreeper(target: Entity, dist: number, ready: boolean): void {
+    const step = creeperStep({
+      dist,
+      ready,
+      reach: ATTACK_REACH_BLOCKS,
+      backingOff: this.creeperBackingOff,
+    });
+    this.creeperBackingOff = step.backingOff;
+    if (step.attack) {
+      this.lowerShield();
+      this.bot.attack(target);
+      this.ticksSinceAttack = 0;
+    }
+    if (step.move === this.creeperGoal || !this.bot.pathfinder) return;
+    this.creeperGoal = step.move;
+    const goal =
+      step.move === 'close'
+        ? new goals.GoalFollow(target, FOLLOW_RANGE_BLOCKS)
+        : step.move === 'back'
+          ? new goals.GoalInvert(new goals.GoalFollow(target, CREEPER_SAFE_BLOCKS + 1))
+          : null;
+    this.bot.pathfinder.setGoal(goal, goal !== null);
   }
 
   /** Side-step a melee mob while waiting for the weapon to recharge. */

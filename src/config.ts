@@ -25,6 +25,8 @@ const rulesBaseSchema = z.object({
   strafeMobs: z.boolean(),
   /** Shoot with a bow (if the bot has one and arrows) at targets between the bow range limits. */
   bow: z.boolean(),
+  /** In melee against a creeper, swing once and back out of blast range while the weapon recharges. */
+  creeperHitAndRun: z.boolean(),
   /** Closer than this, the bot switches to its melee weapon. */
   bowMinBlocks: z.number().min(2).max(64),
   /** Farther than this, the bot closes in before shooting. */

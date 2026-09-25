@@ -11,6 +11,7 @@ export interface RuleSettings {
   shield?: boolean;
   strafeMobs?: boolean;
   bow?: boolean;
+  creeperHitAndRun?: boolean;
   bowMinBlocks?: number;
   bowMaxBlocks?: number;
   /** Players never to attack: owner, allies, other bots. */

@@ -75,6 +75,7 @@ export function createMineflayerBot(server: Config['server'], config: BotConfig)
       shield: config.rules.shield,
       strafeMobs: config.rules.strafeMobs,
       bow: config.rules.bow,
+      creeperHitAndRun: config.rules.creeperHitAndRun,
       bowRange: { minBlocks: config.rules.bowMinBlocks, maxBlocks: config.rules.bowMaxBlocks },
     }),
   };

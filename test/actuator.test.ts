@@ -395,3 +395,40 @@ describe('MineflayerActuator bow', () => {
     expect(f.events.some((e) => e.startsWith('slot '))).toBe(true);
   });
 });
+
+describe('MineflayerActuator against a creeper', () => {
+  const goalName = (call: unknown[] | undefined) =>
+    (call?.[0] as { constructor: { name: string } } | null)?.constructor.name ?? 'none';
+
+  it('swings once, then backs out of blast range instead of trading blows', () => {
+    const f = fakeBot();
+    f.add(1, 'creeper', 2);
+    const a = new MineflayerActuator(f.asBot, { creeperHitAndRun: true });
+    a.engage(1);
+    ticks(a, 20); // the sword recharges in 13 ticks, but the creeper is still close
+    expect(f.bot.attack).toHaveBeenCalledTimes(1);
+    expect(goalName(f.bot.pathfinder.setGoal.mock.calls.at(-1))).toBe('GoalInvert');
+
+    // Clear of the blast and recharged: close in again.
+    (f.bot.entities[1] as { position: Vec3 }).position = new Vec3(9, 64, 0);
+    a.tick(1);
+    expect(goalName(f.bot.pathfinder.setGoal.mock.calls.at(-1))).toBe('GoalFollow');
+    (f.bot.entities[1] as { position: Vec3 }).position = new Vec3(2, 64, 0);
+    a.tick(1);
+    expect(f.bot.attack).toHaveBeenCalledTimes(2);
+  });
+
+  it('fights a creeper like any mob when switched off, and other mobs are unaffected', () => {
+    for (const [name, on] of [
+      ['creeper', false],
+      ['zombie', true],
+    ] as const) {
+      const f = fakeBot();
+      f.add(1, name, 2);
+      const a = new MineflayerActuator(f.asBot, { creeperHitAndRun: on });
+      a.engage(1);
+      ticks(a, 27);
+      expect(f.bot.attack).toHaveBeenCalledTimes(3);
+    }
+  });
+});

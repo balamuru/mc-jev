@@ -83,9 +83,9 @@ Phase 8 made bots swing only as critical hits when another player is within 2 bl
 | coordinated, no roles, Jev   | 16.6 ± 0.5       | 27.2 ± 1.3    | 1      | 0                         |
 | coordinated, roles from Jev  | 24.6 ± 1.4       | 20.3 ± 1.4    | 0      | 1                         |
 
-- **With Jev, roles cut squad damage by a quarter** (27.2 → 20.3, about 3.6 standard errors), and no bot died.
+- **With Jev, roles cut squad damage by a quarter** (27.2 → 20.3, about 3.6 standard errors), and no bot died. Two later reruns of the same setup (20 and 30 trials, run while chasing the uncleared wave) gave squad damage 22.1 and 21.8 and two deaths in total, so over 70 trials that is 2 deaths, against 1 in 20 without roles: still no more often, but "no deaths" was partly luck.
 - **Without Jev, roles made no measurable difference to damage** (24.0 → 23.0, within noise), with no deaths against one.
-- **Roles make the squad slower**, by about half, probably because the ranged bot spends time backing away from zombies instead of fighting them (not measured separately). One wave with Jev’s roles was not cleared within 60 seconds (no bot died in it).
+- **Roles make the squad slower**, by about half, probably because the ranged bot spends time backing away from zombies instead of fighting them (not measured separately). One wave with Jev’s roles was not cleared within 60 seconds (no bot died in it). A later rerun with diagnostics caught the same thing once in 30 trials: a skeleton had ended up 21 blocks away, outside the 16-block engage radius and no longer attacking, and guard-mode bots leave such a mob alone.
 - **So `swarm.coordinator.assignRoles` defaults to on.** Under the agreed rule (squad damage lower, nobody dying more often) it passes both with and without Jev, clearly so with Jev. `swarm.mode` stays `cooperative`: coordinated with roles and no Jev is no better than cooperative (23.0 against 23.3) and slower.
 - **Jev without roles was the worst row** (27.2): the focus directive again did not help, as in the first squad runs.
 - The two Jev runs cost $0.18 in total (40 trials of three bots plus the coordinator).

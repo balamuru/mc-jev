@@ -90,6 +90,14 @@ export const SCENARIOS: Scenario[] = [
     gear: 'wood-shield',
   },
   {
+    id: 'creeper-far',
+    description: '1 creeper 16 blocks away, full HP, wooden sword, no armor',
+    mobs: [{ type: 'creeper', count: 1 }],
+    startHp: 20,
+    gear: 'wood',
+    spawnDistance: 16,
+  },
+  {
     id: 'creeper-bow',
     description: '1 creeper 16 blocks away, full HP, wooden sword and a bow, no armor',
     mobs: [{ type: 'creeper', count: 1 }],

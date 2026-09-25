@@ -66,6 +66,37 @@ interface TrialResult {
   peakDistinctClaims: number;
   /** The roles in force when the wave arrived and when it ended, e.g. `A tank, B fighter`. */
   roles: string;
+  /** For a wave not cleared in time: what each bot was doing and what it could see. */
+  stuck?: string[];
+}
+
+/** What each bot is doing and which hostiles it sees, for explaining a wave that was not cleared. */
+async function explainStuck(server: TestServer, app: App, wave: Wave): Promise<string[]> {
+  const lines = app.agents.map((a) => {
+    const s = a.snapshot();
+    const seen = (s?.entities ?? [])
+      .filter((e) => e.category === 'hostile')
+      .map((e) => `${e.kind} ${e.dist}m${e.visible ? '' : ' (hidden)'}`)
+      .join(', ');
+    const p = s?.self.position;
+    const at = p ? `at ${Math.round(p.x)}, ${Math.round(p.z)}` : 'offline';
+    return `${a.config.username.slice(3, 4)} ${at}: ${a.intent.tactic} (${a.intent.reason}), hp ${s?.self.hp ?? '?'}, sees ${seen || 'nothing'}`;
+  });
+  for (const { kind } of wave) {
+    // `data get` takes one entity at a time: read the nearest unread one, then tag it as read.
+    const next = `@e[type=${kind},tag=!mcjev_seen,sort=nearest,limit=1]`;
+    for (let i = 0; i < 20; i++) {
+      // The console colors NBT values; strip the color codes before reading the numbers.
+      const raw = await server.run(`data get entity ${next} Pos`, 200);
+      // eslint-disable-next-line no-control-regex
+      const out = raw.replace(/\u001b\[[\d;]*m/g, '');
+      const m = /entity data: \[([-\d.]+)d, [-\d.]+d, ([-\d.]+)d\]/.exec(out);
+      if (!m) break;
+      lines.push(`${kind} still alive at ${Math.round(Number(m[1]))}, ${Math.round(Number(m[2]))}`);
+      await server.run(`tag ${next} add mcjev_seen`, 100);
+    }
+  }
+  return lines;
 }
 
 async function waveAlive(server: TestServer, wave: Wave): Promise<boolean> {
@@ -143,6 +174,7 @@ async function runTrial(
     }
   }
   clearInterval(sampler);
+  const stuck = clear === null ? await explainStuck(server, app, wave) : undefined;
   await sleep(500);
   const deaths = app.agents.reduce((n, a, i) => n + (a.deaths - deathsBefore[i]!), 0);
   const hpAfter = app.agents.reduce((n, a) => n + (a.snapshot()?.self.hp ?? 0), 0);
@@ -153,6 +185,7 @@ async function runTrial(
     deaths,
     peakDistinctClaims: peak,
     roles: `${roles || currentRoles(app)} -> ${currentRoles(app)}`,
+    ...(stuck ? { stuck } : {}),
   };
 }
 
@@ -212,6 +245,7 @@ async function main() {
           console.log(
             `  ${mode} #${t + 1}: ${r.clearSeconds === null ? 'NOT CLEARED' : `cleared in ${fmt(r.clearSeconds)}s`}, damage ${fmt(r.damageTaken)}, deaths ${r.deaths}, peak targets ${r.peakDistinctClaims}${mode === 'coordinated' ? `, roles ${r.roles}` : ''}`,
           );
+          for (const line of r.stuck ?? []) console.log(`      ${line}`);
         }
       } finally {
         spent += app.gateway.stats().costUsd;

@@ -153,12 +153,17 @@ Phases 8 to 11 close the gaps a review of the implementation against the plan fo
 - **npm audit:** Mineflayer 4.39.0 is the latest, and the 8 moderate warnings all come from one `uuid` advisory in the online-login libraries, which offline bots never call. Documented in [setup.md](setup.md#troubleshooting) and left.
 - **The intermittent combat test:** not reproduced. After the starting-HP fix in Phase 8, the full integration suite passed 12 times in a row (8 of them in a loop for this purpose). The second failure was never captured, so its cause is unknown; it may have been the same uncontrolled starting HP. The test now prints the bot's intent, deaths and full snapshot when it fails, so a recurrence will show what happened.
 
+## Fixes after Phase 11
+
+- **Creepers in melee.** A melee bot sprinting at a creeper from 16 blocks died in 16 of 20 trials. `rules.creeperHitAndRun` (on) makes it swing once and back out of blast range while the weapon recharges: 20 of 20 survived with no damage, and damage in the 8-block scenario fell from 10.1 to 0. See [survival-benchmark.md](survival-benchmark.md#after-phase-11-hit-and-run-against-creepers).
+- **The wave that was not cleared (Phase 10).** The squad benchmark now prints, for a wave not cleared in time, each bot's position, intent, HP and the hostiles it sees, and where each remaining mob is. A 30-trial rerun caught it once: every bot was idle and one skeleton stood 21 blocks away, visible but outside the 16-block engage radius and not attacking. Guard-mode bots leave such a mob alone by design, so this is not a combat bug; the benchmark just counts the wave as not cleared.
+
 ## Backlog (not scheduled)
 
 Ideas from the survival discussion, to revisit once the benchmark shows where the bot still dies:
 
 - **Escape destinations.** Pick an open spot away from all threats (and toward home, the spawn point or a bed) and pathfind to it, instead of "get 24 blocks away". This avoids dead ends.
-- **Enemy-specific tactics.** Sprinting works against zombies. Baby zombies and spiders are faster than a sprinting player, so fight or block. Skeletons need broken line of sight. Creepers need 7+ blocks of distance and no melee. The speeds are from memory and should be measured first. Phase 9 found a concrete case: a melee bot that sprints at a creeper from 16 blocks arrives beside it and dies in the explosion (17 of 20 trials).
+- **Enemy-specific tactics.** Sprinting works against zombies. Baby zombies and spiders are faster than a sprinting player, so fight or block. Skeletons need broken line of sight. Creepers need 7+ blocks of distance and no melee. The speeds are from memory and should be measured first. The creeper case is done: see Fixes after Phase 11.
 - **A creeper-only shield.** Phase 8 showed the shield helps against creepers (about 17% less damage) but not against groups of zombies. Raising it only for creepers may keep the gain without the loss. It would need its own benchmark run.
 - **Emergency tools.** Golden apples, healing potions, a totem of undying in the offhand, raising a shield, and blocking yourself in with blocks (this only stops melee mobs).
 - **Cheaper deaths.** The `keepInventory` gamerule for experiments, and remembering where the bot died.
