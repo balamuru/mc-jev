@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BotAgent, type Logger } from '../src/agent/BotAgent.js';
+import { BotAgent, type AgentOptions, type Logger } from '../src/agent/BotAgent.js';
 import { parseConfig } from '../src/config.js';
 import { JevGateway } from '../src/strategic/gateway.js';
 import { Blackboard } from '../src/swarm/blackboard.js';
@@ -14,7 +14,7 @@ const config = parseConfig(JSON.parse(readFileSync('config/default.json', 'utf8'
 const botConfig = config.bots[0]!;
 
 function setup(
-  extra: { snapshotIntervalMs?: number; onSnapshot?: () => void } = {},
+  extra: AgentOptions = {},
   cfg = botConfig,
 ) {
   const bots: FakeBot[] = [];
@@ -707,6 +707,90 @@ describe('BotAgent player combat', () => {
     bots[0]!.emit('physicsTick');
     expect(agent.intent.tactic).toBe('engage');
     vi.advanceTimersByTime(25_000);
+    bots[0]!.emit('physicsTick');
+    expect(agent.intent.tactic).toBe('idle');
+  });
+
+  it('defends its owner when the owner is attacked by another player', () => {
+    const cfg = { ...botConfig, owner: 'Boss', protectedPlayers: ['Boss', 'JevBot'] };
+    const { agent, bots, actuators } = online(cfg);
+    bots[0]!.entities['60'] = rival(60, 'Boss', -2);
+    bots[0]!.entities['50'] = rival(50, 'Rival', -4);
+    bots[0]!.emit('entityHurt', bots[0]!.entities['60'], bots[0]!.entities['50']);
+    bots[0]!.emit('physicsTick');
+    expect(agent.intent).toMatchObject({
+      tactic: 'engage',
+      targetId: 50,
+      reason: 'fighting Rival',
+    });
+    expect(actuators[0]!.calls).toEqual(['engage 50']);
+  });
+
+  it('defends a squadmate bot when the teammate is attacked', () => {
+    const cfg = { ...botConfig, owner: 'Boss', protectedPlayers: ['Boss', 'JevBot', 'Mate'] };
+    const { agent, bots, actuators } = online(cfg);
+    bots[0]!.entities['70'] = rival(70, 'Mate', -2);
+    bots[0]!.entities['50'] = rival(50, 'Rival', -4);
+    bots[0]!.emit('entityHurt', bots[0]!.entities['70'], bots[0]!.entities['50']);
+    bots[0]!.emit('physicsTick');
+    expect(agent.intent).toMatchObject({
+      tactic: 'engage',
+      targetId: 50,
+      reason: 'fighting Rival',
+    });
+    expect(actuators[0]!.calls).toEqual(['engage 50']);
+  });
+
+  it('alerts other bots in the squad via bus when a player attacks', () => {
+    const bus = new InProcessBus();
+    const board = new Blackboard(bus, { claimTtlMs: 8000 });
+    const cfg1 = {
+      ...botConfig,
+      username: 'Bot1',
+      owner: 'Boss',
+      protectedPlayers: ['Boss', 'Bot1', 'Bot2'],
+    };
+    const cfg2 = {
+      ...botConfig,
+      username: 'Bot2',
+      owner: 'Boss',
+      protectedPlayers: ['Boss', 'Bot1', 'Bot2'],
+    };
+
+    const swarm1 = { mode: 'coordinated' as SwarmMode, bus, board, helpHp: 8, helpAllies: true };
+    const swarm2 = { mode: 'coordinated' as SwarmMode, bus, board, helpHp: 8, helpAllies: true };
+
+    const s1 = setup({ swarm: swarm1 }, cfg1);
+    const s2 = setup({ swarm: swarm2 }, cfg2);
+
+    s1.agent.start();
+    s1.bots[0]!.equipIron().emit('spawn');
+    s2.agent.start();
+    s2.bots[0]!.equipIron().emit('spawn');
+
+    // Bot2 sees Rival, but hasn't been directly hit by Rival
+    s2.bots[0]!.entities['50'] = rival(50, 'Rival', -4);
+
+    // Bot1 sees Rival attacking Boss (owner)
+    s1.bots[0]!.entities['60'] = rival(60, 'Boss', -2);
+    s1.bots[0]!.entities['50'] = rival(50, 'Rival', -4);
+    s1.bots[0]!.emit('entityHurt', s1.bots[0]!.entities['60'], s1.bots[0]!.entities['50']);
+
+    // Bot2 ticks physics: engages Rival because the squad was alerted via bus
+    s2.bots[0]!.emit('physicsTick');
+    expect(s2.agent.intent).toMatchObject({
+      tactic: 'engage',
+      targetId: 50,
+      reason: 'fighting Rival',
+    });
+  });
+
+  it('ignores attacks between two unprotected stranger players', () => {
+    const cfg = { ...botConfig, owner: 'Boss', protectedPlayers: ['Boss', 'JevBot'] };
+    const { agent, bots } = online(cfg);
+    bots[0]!.entities['50'] = rival(50, 'StrangerA', -4);
+    bots[0]!.entities['51'] = rival(51, 'StrangerB', -5);
+    bots[0]!.emit('entityHurt', bots[0]!.entities['51'], bots[0]!.entities['50']);
     bots[0]!.emit('physicsTick');
     expect(agent.intent.tactic).toBe('idle');
   });

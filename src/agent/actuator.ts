@@ -241,7 +241,9 @@ export class MineflayerActuator implements Actuator {
     this.strafer.reset();
     this.ticksWaitingForCrit = 0;
     this.bot.pathfinder?.setGoal(null);
-    this.bot.clearControlStates();
+    if (typeof this.bot.clearControlStates === 'function') {
+      this.bot.clearControlStates();
+    }
   }
 
   setEatingPaused(paused: boolean): void {

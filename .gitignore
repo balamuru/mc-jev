@@ -6,4 +6,7 @@ server/
 logs/
 coverage/
 *.log
+local.json
+local*.json
 config/local*.json
+

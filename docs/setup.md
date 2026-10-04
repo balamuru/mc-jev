@@ -477,3 +477,4 @@ npm run analyze:decisions         # Summarizes logs in logs/ (costs, latencies, 
 | `UnsupportedClassVersionError` or Java version error | Java runtime is older than Java 25. | Minecraft 26.1.2 requires Java 25. Verify with `java -version` and install `openjdk-25-jre-headless`. |
 | Ubuntu `dpkg: dependency problems... libgdk-pixbuf2.0-0` | Legacy `.deb` dependencies on modern Ubuntu. | Run `sudo dpkg --purge minecraft-launcher`, then install via Flatpak: `flatpak install flathub com.mojang.Minecraft`. |
 | `Jev: no key, so the bots run on rules only` | `.env` missing or `TYPESAFE_API_KEY` unset. | Set `TYPESAFE_API_KEY` in `.env`. Bots will continue operating on deterministic rules in the meantime. |
+| Bots disconnect with `socketClosed` or enter 30s reconnect loops | Paper connection throttling drops rapid successive bot logins from the same IP. | Set `connection-throttle: 0` in `server/bukkit.yml` and restart the server. |

@@ -40,6 +40,8 @@ export type SwarmEvent =
   /** The coordinator's order: the whole squad should focus on this target for a while. */
   | { type: 'directive'; at: number; ttlMs: number; focusTargetId: number }
   /** The coordinator's role assignments, by bot name. Each lapses after `ttlMs`. */
-  | { type: 'roles'; at: number; ttlMs: number; roles: Record<string, string> };
+  | { type: 'roles'; at: number; ttlMs: number; roles: Record<string, string> }
+  /** A player attacked a squad bot, the owner, or an ally. */
+  | { type: 'provoked'; agent: string; attacker: string; victim: string; at: number };
 
 export type SwarmEventType = SwarmEvent['type'];

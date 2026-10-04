@@ -52,6 +52,14 @@ max-players=20
 PROPS
 fi
 
+if [[ ! -f bukkit.yml ]]; then
+  cat > bukkit.yml <<BUKKIT
+settings:
+  connection-throttle: 0
+BUKKIT
+fi
+
+
 if [[ "${1:-}" == "--download-only" ]]; then
   echo "Ready: $DIR/$JAR (start it later with ./scripts/server.sh)"
   exit 0

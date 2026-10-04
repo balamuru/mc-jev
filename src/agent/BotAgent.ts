@@ -18,6 +18,7 @@ import { SwarmMember, type SwarmMode } from '../swarm/member.js';
 import { MineflayerActuator, attachPlugins } from './actuator.js';
 import { backoffDelayMs, type BackoffOptions } from './backoff.js';
 import { readSnapshot, type BotLike } from './mineflayerAdapter.js';
+import { isProtectedPlayer } from '../reflex/protect.js';
 
 export type { Logger };
 
@@ -98,6 +99,7 @@ export class BotAgent {
   private attempt = 0;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private snapshotTimer: NodeJS.Timeout | null = null;
+  private unsubSwarm: (() => void) | null = null;
   private readonly log: Logger;
   private readonly backoff: BackoffOptions;
 
@@ -239,6 +241,23 @@ export class BotAgent {
           })
         : null;
     this.member = member;
+
+    this.unsubSwarm?.();
+    this.unsubSwarm = null;
+    if (swarm?.bus) {
+      const protectedNames = rules.protectedPlayers ?? protectedFor(this.config);
+      this.unsubSwarm = swarm.bus.subscribe('provoked', (event) => {
+        if (event.type === 'provoked' && event.agent !== this.config.username) {
+          if (!isProtectedPlayer(event.attacker, protectedNames)) {
+            this.provocation.noteHit(event.attacker, event.at);
+            this.log.info(
+              `alerted: player ${event.attacker} attacked ${event.victim}; squad defending!`,
+            );
+          }
+        }
+      });
+    }
+
     const modes = new ModeController({
       swarm: member ?? undefined,
       ownerName: this.config.owner,
@@ -306,25 +325,79 @@ export class BotAgent {
   }
 
   /**
-   * Notice players who attack the bot. The server names the attacker in `entityHurt` when it can;
-   * otherwise a swing near the bot at the moment its HP dropped, with no mob next to it, is used.
+   * Notice players who attack the bot, its owner, allies, or squadmates.
+   * The server names the attacker in `entityHurt` when it can;
+   * otherwise a swing near the victim at the moment of damage is used.
    */
   private watchForAttackers(bot: BotLike): void {
     if (!this.config.rules.pvp) return;
+    const protectedNames = protectedFor(this.config);
+    const recentSwings = new Map<string, { at: number; position: Vec3Like }>();
     // `bot.entity` does not exist until the bot has spawned, so read it when an event arrives.
     let lastHealth = bot.health;
+
     bot.on('entityHurt', (victim: unknown, source: unknown) => {
-      const attacker = source as { type?: string; username?: string } | undefined;
-      if (victim === (bot.entity as unknown) && attacker?.type === 'player' && attacker.username) {
-        this.provocation.noteHit(attacker.username, Date.now());
+      const victimName = playerUsername(bot, victim);
+      const isVictimMe =
+        victim === (bot.entity as unknown) ||
+        (victimName != null && victimName.toLowerCase() === this.config.username.toLowerCase());
+      const isVictimOwner =
+        !!this.config.owner && victimName?.toLowerCase() === this.config.owner.toLowerCase();
+      const isVictimProtected =
+        isVictimMe ||
+        isVictimOwner ||
+        (victimName != null && isProtectedPlayer(victimName, protectedNames));
+
+      let attackerName = playerUsername(bot, source);
+
+      // If the server did not supply a source cause, fall back to recent swings near the victim.
+      if (!attackerName && isVictimProtected) {
+        const victimPos =
+          isVictimMe && bot.entity
+            ? bot.entity.position
+            : (victim as { position?: Vec3Like } | undefined)?.position;
+        if (victimPos) {
+          const now = Date.now();
+          for (const [name, swing] of recentSwings) {
+            if (now - swing.at <= 600 && distance(victimPos, swing.position) <= 4.5) {
+              if (!isProtectedPlayer(name, protectedNames)) {
+                attackerName = name;
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      if (attackerName && !isProtectedPlayer(attackerName, protectedNames) && isVictimProtected) {
+        const now = Date.now();
+        this.provocation.noteHit(attackerName, now);
+        this.log.info(
+          `player ${attackerName} attacked ${isVictimMe ? 'me' : (victimName ?? 'protected player')}; defending!`,
+        );
+        if (this.options.swarm?.bus) {
+          this.options.swarm.bus.publish({
+            type: 'provoked',
+            agent: this.config.username,
+            attacker: attackerName,
+            victim: isVictimMe ? this.config.username : (victimName ?? 'protected player'),
+            at: now,
+          });
+        }
       }
     });
+
     bot.on('entitySwingArm', (entity: unknown) => {
       const e = entity as { type?: string; username?: string; position?: Vec3Like };
       const me = bot.entity;
-      if (!me || e.type !== 'player' || !e.username || e === (me as unknown) || !e.position) return;
-      this.provocation.noteSwing(e.username, distance(me.position, e.position), Date.now());
+      const name = playerUsername(bot, entity);
+      if (!name || isProtectedPlayer(name, protectedNames) || !e.position) return;
+      recentSwings.set(name.toLowerCase(), { at: Date.now(), position: e.position });
+      if (me) {
+        this.provocation.noteSwing(name, distance(me.position, e.position), Date.now());
+      }
     });
+
     bot.on('health', () => {
       const drop = lastHealth - bot.health;
       lastHealth = bot.health;
@@ -332,7 +405,22 @@ export class BotAgent {
       const mobNearby = (this.snapshot()?.entities ?? []).some(
         (e) => e.category === 'hostile' && e.dist <= 4,
       );
-      this.provocation.noteHpDrop({ amount: drop, mobNearby }, Date.now());
+      const now = Date.now();
+      const attackers = this.provocation.noteHpDrop({ amount: drop, mobNearby }, now);
+      if (attackers.length > 0 && this.options.swarm?.bus) {
+        for (const attacker of attackers) {
+          if (!isProtectedPlayer(attacker, protectedNames)) {
+            this.log.info(`player ${attacker} attacked me; defending!`);
+            this.options.swarm.bus.publish({
+              type: 'provoked',
+              agent: this.config.username,
+              attacker,
+              victim: this.config.username,
+              at: now,
+            });
+          }
+        }
+      }
     });
   }
 
@@ -351,6 +439,8 @@ export class BotAgent {
   }
 
   private stopReflex(): void {
+    this.unsubSwarm?.();
+    this.unsubSwarm = null;
     this.modes = null;
     this.member?.dispose();
     this.member = null;
@@ -400,6 +490,24 @@ export class BotAgent {
     this.reconnectTimer = null;
     this.snapshotTimer = null;
   }
+}
+
+function playerUsername(bot: BotLike, entity: unknown): string | null {
+  if (!entity || typeof entity !== 'object') return null;
+  const e = entity as { type?: string; username?: string; name?: string; id?: number };
+  if (e.username) return e.username;
+  if (e === (bot.entity as unknown)) return (bot as { username?: string }).username ?? null;
+  if (bot.players) {
+    for (const [username, p] of Object.entries(bot.players)) {
+      if (
+        p?.entity === entity ||
+        (e.id != null && (p?.entity as { id?: number } | undefined)?.id === e.id)
+      ) {
+        return username;
+      }
+    }
+  }
+  return e.type === 'player' && e.name && e.name !== 'player' ? e.name : null;
 }
 
 function errorMessage(err: unknown): string {

@@ -114,7 +114,7 @@ A bot starts in its configured default mode and returns to it on `auto`. Orders 
 
 Players are never threats just for being there. A player becomes a threat when:
 
-1. **They attacked the bot.** `ProvocationTracker` (`src/perception/provocation.ts`) listens for `entityHurt`, which names the attacker, and falls back to matching a nearby player's arm swing to a drop in the bot's HP (ignoring drops when a hostile mob is within 4 blocks). An attacker stays hostile for 20 seconds after their last hit.
+1. **They attacked the bot, its owner, allies, or squadmates.** `watchForAttackers` in `BotAgent` listens for `entityHurt`. When an unfamiliar player attacks the bot, its owner, an ally, or a teammate bot, they are marked hostile for 20 seconds (`ProvocationTracker`). The witnessing bot immediately engages and broadcasts a `provoked` event across the squad bus so all bots unite in defense. For attacks directly on the bot where the server did not name the source, it falls back to matching a nearby player's arm swing to a drop in HP (ignoring drops when a hostile mob is within 4 blocks).
 2. **Jev is very sure they are about to attack.** The strategic layer asks one yes/no question for each of up to three unfamiliar players in view. A player is marked hostile for 10 seconds only if Jev says at least 85%, they hold a weapon and they are within 8 blocks. A wrong answer here makes the bot attack a bystander, so this is the strictest threshold in the system.
 
 Both routes set a `provoked` flag on the player in the snapshot, and from there the normal rules apply: the player is a threat like a mob.

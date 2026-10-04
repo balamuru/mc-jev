@@ -77,7 +77,7 @@ export class SwarmMember implements SwarmView {
     this.position = snapshot.self.position;
 
     const threats = snapshot.entities
-      .filter((e) => e.category === 'hostile' && !NEUTRAL_MOBS.has(e.kind))
+      .filter((e) => (e.category === 'hostile' && !NEUTRAL_MOBS.has(e.kind)) || (e.category === 'player' && e.provoked))
       .map((e) => ({ id: e.id, kind: e.kind, position: e.position }));
     const beat = t - this.lastBeat >= this.heartbeatMs;
     // A scout's job is to spot: it reports a new threat at once instead of on the next heartbeat.
