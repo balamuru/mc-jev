@@ -93,4 +93,11 @@ npm run analyze:decisions  # Analyze latency, cost, and decision patterns in log
 | **[docs/requirements.md](docs/requirements.md)** | Functional requirements specification (FR-1 through FR-11). |
 | **[docs/survival-benchmark.md](docs/survival-benchmark.md)** | Survival benchmark methodology, empirical results, and combat tuning decisions. |
 | **[docs/tuning.md](docs/tuning.md)** | Tuning parameters and findings from Phase 7 onwards. |
+| **[docs/blog-post.md](docs/blog-post.md)** | Architectural deep dive & blog post on dual-speed AI companions in Minecraft. |
 | **[docs/phases.md](docs/phases.md)** | Detailed implementation breakdown across all development phases. |
+
+---
+
+## License
+
+This project is licensed under the Apache License, Version 2.0 - see the [LICENSE](LICENSE) file for details.
