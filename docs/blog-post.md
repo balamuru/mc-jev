@@ -4,7 +4,7 @@
 
 ---
 
-You know the feeling all too well. 
+You know the feeling all too well.... 
 
 You’re deep in an underground ravine at Y=-54. Your inventory is loaded with raw iron, redstone, and twelve precious diamonds. Your hunger bar is down two notches, your torches are running low, and suddenly—*tsst*. 
 
@@ -56,78 +56,15 @@ The architectural breakthrough in [mc-jev](https://github.com/balamuru/mc-jev) m
 
 ```mermaid
 flowchart TD
-    subgraph SquadCoord ["1. Multi-Agent Swarm Graph"]
-        BB[("Shared Blackboard - Claims, Squad HP, Threats")]
-        Coord["Squad Coordinator Jev - Runs every 4000ms"]
-        Directives["Squad Directives - Focus Target and Roles"]
-        Claims["Target Claim Manager - Anti-Dogpiling Lock"]
-        Provocation["Provocation Dispatcher - Owner Hurt Event"]
+    Game["Minecraft Server (20 Hz / 50ms)"] -->|Events & Ticks| Bot["Mineflayer Bot Agent"]
+    Bot -->|observe| Snapshot["Perception Snapshot"]
 
-        BB -->|Snapshot| Coord
-        Coord -->|Assigns| Directives
-        Directives -->|Updates| BB
-        Claims -->|Lock or Release| BB
-        Provocation -->|Broadcast Hostile| BB
-    end
+    Snapshot -->|Every 50ms Tick| Reflex["Reflex Layer (Deterministic Kinematics)"]
+    Snapshot -->|Every 2s or on Alert| Strat["Strategic Layer (Jev System 1 / Rules)"]
 
-    subgraph StrategicBrain ["2. Strategic Layer - Jev Decision Pipeline"]
-        Trigger{"Trigger Event? Timer or Combat Event"}
-        GatewayCheck{"Gateway Check - Budget and Rate Limit OK?"}
-        JevCall["Jev Model Call (~270ms via OpenRouter)"]
-        StaleCheck{"Stale Check - HP dropped in flight?"}
-        PolicyGate{"Confidence and Safety Gate"}
-        SetOverride["Set Intent Override - TTL 3000ms"]
-        RulesFallback["Fallback to Deterministic Rules"]
-        HardRetreat["Enforce Rules Retreat - Safety Floor"]
-        JevRetreat["Retreat Intent - Cautious Confidence"]
-        JevEngage["Engage Target - Act Confidence"]
-
-        Trigger -->|Yes| GatewayCheck
-        GatewayCheck -->|Passed| JevCall
-        GatewayCheck -->|Throttled or Over Budget| RulesFallback
-        JevCall --> StaleCheck
-        StaleCheck -->|Fresh| PolicyGate
-        StaleCheck -->|Dropped Stale| RulesFallback
-
-        PolicyGate -->|HP Critical| HardRetreat
-        PolicyGate -->|High Threat or Ambush| JevRetreat
-        PolicyGate -->|Confident Engage| JevEngage
-        PolicyGate -->|Low Confidence| RulesFallback
-
-        HardRetreat --> SetOverride
-        JevRetreat --> SetOverride
-        JevEngage --> SetOverride
-    end
-
-    subgraph ReflexKinematics ["3. Fast Reflex Loop - 50ms Physics Tick"]
-        Tick(["physicsTick - 50ms"])
-        RetreatGain{"Failed Retreat? Gain under 1.5 blocks"}
-        FightBackLock["Fight Back Lock - 4000ms duration"]
-        ResolveActive{"Active Intent?"}
-        FriendlyProximity{"Owner or Ally within 2 blocks with sword?"}
-        JumpCrit["Jump Attack - Critical hit with 0 sweep AoE"]
-        ExecKinematics["Execute Mechanics - Timing, Bow arc, Kiting"]
-        EvalLocalRules["Local Rules Engine - decideByRules"]
-
-        Tick --> RetreatGain
-        RetreatGain -->|Cornered| FightBackLock
-        RetreatGain -->|Escaping OK| ResolveActive
-        FightBackLock --> FriendlyProximity
-
-        ResolveActive -->|Jev Override Active| FriendlyProximity
-        ResolveActive -->|No Override| EvalLocalRules
-        EvalLocalRules --> FriendlyProximity
-
-        FriendlyProximity -->|Yes| JumpCrit
-        FriendlyProximity -->|No| ExecKinematics
-    end
-
-    BB -.->|Squad Context| Trigger
-    BB -.->|Assigned Role| ResolveActive
-    SetOverride -.->|Inject High-Level Intent| ResolveActive
-    RulesFallback -.->|Clear Override| ResolveActive
+    Strat -->|Sets Intent: engage, retreat, kite| Reflex
+    Reflex -->|Motor Actions: strike, aim, eat, shield| Bot
 ```
-
 
 ### 1. The 50ms Reflex Layer (Pure Deterministic Code)
 The reflex layer runs locally on every single `physicsTick`. It **never** waits on network I/O. Its job is purely mechanical execution:
@@ -135,6 +72,24 @@ The reflex layer runs locally on every single `physicsTick`. It **never** waits 
 * **Arrow Ballistics Simulator:** Arrows in Minecraft aren't laser beams—they obey gravitational acceleration (0.05 blocks/tick²) and air resistance (0.99 drag). The reflex layer solves the launch pitch angle and leads moving targets by measuring their velocity vectors.
 * **Friendly Sweep Prevention:** In Java Edition, swinging a sword on the ground emits a wide slashing sweep attack that damages everything nearby—including you, the owner. When the bot detects you standing within 2 blocks of its target, it automatically jump-attacks. Mid-air swings trigger critical hits with **zero** horizontal sweep!
 * **The Creeper Waltz:** Swing once, immediately kite backward past 7.5 blocks while the weapon recharges, and step back in. No blown-up terrain, no lost hearts.
+
+```mermaid
+flowchart TD
+    Tick(["physicsTick - 50ms"]) --> RetreatCheck{"Failed Retreat? Gain under 1.5 blocks"}
+    
+    RetreatCheck -->|Cornered| FightLock["Lock into Fight-Back for 4s"]
+    RetreatCheck -->|Escaping OK| ActiveIntent{"Active Intent?"}
+    
+    ActiveIntent -->|Override Active| TargetLock["Target Threat"]
+    ActiveIntent -->|No Override| RulesCalc["Calculate Nearest Threat"]
+    
+    TargetLock --> FriendlyCheck{"Ally within 2 blocks with sword?"}
+    RulesCalc --> FriendlyCheck
+    FightLock --> FriendlyCheck
+
+    FriendlyCheck -->|Yes| JumpCrit["Jump Attack - Critical hit with 0 sweep AoE"]
+    FriendlyCheck -->|No| Execute["Execute - 13-tick strike, bow arc, or kite"]
+```
 
 ### 2. The Strategic Layer (Jev & TypeSafe System 1 AI)
 If the reflex layer provides the muscles, what tells the bot *what* to do? 
@@ -156,41 +111,79 @@ Instead of parsing ambiguous conversational prompts, Jev is a **System 1 typed j
 
 Jev evaluates all questions in parallel in **~270 milliseconds**, costing an astonishing **$0.00003 per call** ($0.042 per million input tokens, with free output tokens). For less than a nickel an hour of intense combat, your bot has continuous high-level tactical awareness.
 
+```mermaid
+flowchart TD
+    Trigger{"Trigger Event? Timer 2s or Combat Alert"} -->|Yes| Gate{"Gateway Check - Budget and Limits OK?"}
+    
+    Gate -->|No| RulesFallback["Fallback: Local Deterministic Rules"]
+    Gate -->|Yes| JevCall["Call Jev Model (~270ms via OpenRouter)"]
+
+    JevCall --> Stale{"Stale Check - HP dropped in flight?"}
+    Stale -->|Yes| RulesFallback
+    Stale -->|No| Policy{"Confidence and Safety Gate"}
+
+    Policy -->|HP Critical| EnforceRetreat["Force Rules Retreat (Safety Floor)"]
+    Policy -->|High Threat or Ambush| JevRetreat["Retreat Intent (Cautious Confidence)"]
+    Policy -->|Confident Engage| JevEngage["Engage Intent (Act Confidence)"]
+    Policy -->|Low Confidence| RulesFallback
+
+    EnforceRetreat --> Apply["Apply Intent Override (TTL: 3s)"]
+    JevRetreat --> Apply
+    JevEngage --> Apply
+    RulesFallback --> Clear["Clear Override (Let Rules Decide)"]
+```
+
 ---
 
-## Multi-Agent Squads: LangGraph-Style State Coordination
+## Multi-Agent Squads: Why Blackboard over LangGraph?
 
-A single companion is cool. A synchronized tactical squad is game-changing.
+A single companion is cool. A synchronized tactical squad is game-changing. But building a multi-agent system in a real-time game raises an immediate question:
 
-If you deploy three bots without coordination, they fight like toddlers: all three chase the same zombie while a skeleton snipes them from behind. To fix this, [mc-jev](https://github.com/balamuru/mc-jev) borrows architectural patterns familiar to distributed multi-agent systems and state graphs (like LangGraph): **an event-driven blackboard coordination loop**.
+### Do we use LangGraph in this project?
+**No. LangGraph is deliberately not used in mc-jev.**
 
+Developers familiar with multi-agent orchestration naturally wonder if frameworks like LangGraph or LangChain fit here. While LangGraph is powerful for complex, turn-based workflows (like document analysis, coding assistants, or multi-step research agents), it suffers from a fundamental impedance mismatch when applied to real-time gaming:
+
+| Dimension | LangGraph / Turn-Based Frameworks | The mc-jev Architecture |
+| :--- | :--- | :--- |
+| **Control Clock** | Turn-based / Request-driven | **20 Hz (50ms) hard game physics tick** |
+| **Latency Budget** | Seconds (waiting on LLM node resolution) | **0ms local execution**, async 270ms strategic inference |
+| **Model Type** | General LLMs (GPT-4, Claude) with tool calls | **Fast typed System 1 models (Jev)** |
+| **State Structure** | Graph state with message histories & checkpoints | **Ephemeral perception snapshots & JSON event bus** |
+| **Failure Mode** | Graph pauses, retries, or bubbles exceptions | **Seamless instant fallback to deterministic rules** |
+| **Cost Profile** | $0.01 - $0.10+ per agent interaction | **$0.00003 per strategic evaluation** |
+
+If an agent in a LangGraph graph waits 2 seconds for a graph edge to transition or an LLM tool to parse, your Minecraft bot has already drowned in lava or been blown up by a creeper.
+
+### The Real-Time Solution: In-Process Event Bus & Blackboard
+Instead of heavy agent graphs, [mc-jev](https://github.com/balamuru/mc-jev) implements a lightweight, zero-dependency **Blackboard Architecture** inspired by autonomous robotics:
+
+```mermaid
+flowchart TD
+    Bots["Bot Agents: Alpha, Bravo, Charlie"] -->|Publish: HP, gear, visible threats| Bus["In-Process JSON Event Bus"]
+    Bus --> Blackboard[("Shared Blackboard")]
+
+    Blackboard --> Coordinator["Squad Coordinator (Runs every 4s)"]
+    Coordinator -->|Asks Jev| Roles["Assign Directives:\n• Squad Focus Target\n• Roles: Tank, Ranged, Support, Fighter"]
+    Roles --> Blackboard
+
+    Blackboard --> Claims["Target Claims Engine\nLocks target so others pick free enemies"]
+    Claims --> Bots
+
+    OwnerAlert["Owner or Ally Attacked"] --> Retaliate["Provocation Tracker"]
+    Retaliate -->|Broadcasts Hostile Player| Bus
 ```
-    Bot A (Vanguard) ──┐
-    Bot B (Ranged)   ──┼──► In-Process JSON Bus ──► Shared Blackboard
-    Bot C (Support)  ──┘                                  │
-                                                          ▼
-                                                Squad Coordinator (Jev)
-```
 
-### 1. The Blackboard & Target Claims
-Bots publish JSON events over an in-memory bus: `heartbeat`, `threats`, `claim`, `damaged`, and `provoked`.
-When Bot A engages a zombie, it posts a `claim` with a time-to-live. Bots B and C see the claim on the shared blackboard and automatically peel off to cover other threats. No dogpiling, no wasted DPS.
-
-### 2. Dynamic Role Assignment
-Combat is fluid. A team that stays in rigid roles wipes out. The Squad Coordinator periodically assesses the blackboard and dynamically reassigns roles based on inventory and battlefield health:
-* **The Tank:** Pinpoints whichever teammate has the lowest HP and intercepts threats bearing down on them.
-* **The Ranged Sniper:** Holds position 12 blocks away, focusing fire on creepers and skeleton archers.
-* **The Support:** Watches for distress signals on the bus, dropping into guard posture beside wounded allies.
-* **The Fighter:** High-mobility frontliner dealing raw melee damage.
-
-### 3. The Ultimate Player Bodyguard
-The bots know who their owner is. In chat, you can command them naturally:
-* `follow` — They form a perimeter around you as you travel.
-* `guard here` — They establish a patrol perimeter, defending your base entrance and returning to their post when idle.
-* `hunt` — They comb the nearby area for hostiles to keep you safe while you mine.
-
-And what happens if a griefer or hostile player attacks you on a multiplayer server?
-The moment the server fires an `entityHurt` event where the victim is *you*, the bot’s `ProvocationTracker` sounds the alarm. A `provoked` event floods the squad bus, and every bot in your entourage instantly turns and swarms your attacker in coordinated defense.
+1. **The Blackboard & Target Claims:**
+   Bots broadcast JSON events (`heartbeat`, `threats`, `claim`, `damaged`, `provoked`) over an in-process bus. When Bot A attacks a zombie, it claims that target with an 8-second TTL. Other bots inspect the blackboard, see the claim, and immediately select unallocated threats.
+2. **Dynamic Combat Roles:**
+   Every 4 seconds, a lightweight coordinator queries Jev to assess squad health and assign roles:
+   * **The Tank:** Pinpoints the teammate with the lowest HP and intercepts threats bearing down on them.
+   * **The Ranged Sniper:** Holds distance at 12 blocks, prioritizing creepers and archers.
+   * **The Support:** Rushes to hurt allies before engaging solo threats.
+   * **The Fighter:** High-mobility frontliner dealing raw melee damage.
+3. **Player Bodyguarding:**
+   When an unknown player attacks you, the `ProvocationTracker` fires a `provoked` event across the bus, triggering an immediate, unified counterattack by the entire squad.
 
 ---
 
