@@ -56,39 +56,42 @@ The architectural breakthrough in [mc-jev](https://github.com/balamuru/mc-jev) m
 
 ```mermaid
 flowchart TD
-    subgraph SquadCoord["Multi-Agent Swarm (Blackboard Loop)"]
-        BB[("Shared Blackboard\n• Target Claims\n• Squad Health & Gear\n• Observed Threats")]
-        Coord["Squad Coordinator (Jev)\nRuns every 4000ms"]
-        Directives["Squad Directives\n• Focus Target\n• Roles: Tank / Ranged / Support / Fighter"]
-        Claims["Target Claim Manager\nAnti-Dogpiling Lock (TTL: 8s)"]
-        Provocation["Provocation Dispatcher\nOwner/Ally Hurt Event"]
+    subgraph SquadCoord ["1. Multi-Agent Swarm Graph"]
+        BB[("Shared Blackboard - Claims, Squad HP, Threats")]
+        Coord["Squad Coordinator Jev - Runs every 4000ms"]
+        Directives["Squad Directives - Focus Target and Roles"]
+        Claims["Target Claim Manager - Anti-Dogpiling Lock"]
+        Provocation["Provocation Dispatcher - Owner Hurt Event"]
 
         BB -->|Snapshot| Coord
         Coord -->|Assigns| Directives
         Directives -->|Updates| BB
-        Claims <-->|Lock / Release| BB
+        Claims -->|Lock or Release| BB
         Provocation -->|Broadcast Hostile| BB
     end
 
-    subgraph StrategicBrain["Strategic Layer (Jev System 1 Decision Pipeline)"]
-        Trigger{"Trigger Event?\n• Timer (2000ms)\n• hurt / lowHp / newThreat"}
-        GatewayCheck{"Gateway Check\nBudget & Rate Limit OK?"}
-        JevCall["Jev Model Call (~270ms)\n• tactic (engage/retreat/ignore)\n• target selection\n• threat_level (0-3)\n• ambush probability"]
-        StaleCheck{"Stale Check\nHP dropped >= 5\nin-flight?"}
-        PolicyGate{"Confidence & Safety Gate\n(decideWithJev)"}
-        SetOverride["Set Intent Override\n(TTL: 3000ms)"]
-        RulesFallback["Fallback to Deterministic Rules\n(decideByRules)"]
+    subgraph StrategicBrain ["2. Strategic Layer - Jev Decision Pipeline"]
+        Trigger{"Trigger Event? Timer or Combat Event"}
+        GatewayCheck{"Gateway Check - Budget and Rate Limit OK?"}
+        JevCall["Jev Model Call (~270ms via OpenRouter)"]
+        StaleCheck{"Stale Check - HP dropped in flight?"}
+        PolicyGate{"Confidence and Safety Gate"}
+        SetOverride["Set Intent Override - TTL 3000ms"]
+        RulesFallback["Fallback to Deterministic Rules"]
+        HardRetreat["Enforce Rules Retreat - Safety Floor"]
+        JevRetreat["Retreat Intent - Cautious Confidence"]
+        JevEngage["Engage Target - Act Confidence"]
 
         Trigger -->|Yes| GatewayCheck
         GatewayCheck -->|Passed| JevCall
-        GatewayCheck -->|Throttled / Over Budget| RulesFallback
+        GatewayCheck -->|Throttled or Over Budget| RulesFallback
         JevCall --> StaleCheck
         StaleCheck -->|Fresh| PolicyGate
-        StaleCheck -->|Dropped (Stale)| RulesFallback
+        StaleCheck -->|Dropped Stale| RulesFallback
 
-        PolicyGate -->|HP <= retreatHp| HardRetreat["Enforce Rules Retreat (Safety Floor)"]
-        PolicyGate -->|Threat >= 2.5 or Ambush >= 0.85| JevRetreat["Retreat Intent (Cautious >= 0.5)"]
-        PolicyGate -->|Engage with Act >= 0.7| JevEngage["Engage Target (Overrules Rules)"]
+        PolicyGate -->|HP Critical| HardRetreat
+        PolicyGate -->|High Threat or Ambush| JevRetreat
+        PolicyGate -->|Confident Engage| JevEngage
         PolicyGate -->|Low Confidence| RulesFallback
 
         HardRetreat --> SetOverride
@@ -96,14 +99,15 @@ flowchart TD
         JevEngage --> SetOverride
     end
 
-    subgraph ReflexKinematics["Fast Reflex Loop (50ms / 20 Hz Physics Tick)"]
-        Tick(["physicsTick (50ms)"])
-        RetreatGain{"Failed Retreat?\nGain < 1.5 blocks"}
-        FightBackLock["Fight Back Lock\n(Duration: 4000ms)"]
+    subgraph ReflexKinematics ["3. Fast Reflex Loop - 50ms Physics Tick"]
+        Tick(["physicsTick - 50ms"])
+        RetreatGain{"Failed Retreat? Gain under 1.5 blocks"}
+        FightBackLock["Fight Back Lock - 4000ms duration"]
         ResolveActive{"Active Intent?"}
-        FriendlyProximity{"Owner / Ally within 2 blocks\n& Sword equipped?"}
-        JumpCrit["Jump Attack\n(Critical hit, 0 sweep AoE)"]
-        ExecKinematics["Execute Mechanics\n• 13-tick weapon charge\n• Arrow ballistics & lead\n• Creeper hit-and-run kiting\n• Auto-eat when safe"]
+        FriendlyProximity{"Owner or Ally within 2 blocks with sword?"}
+        JumpCrit["Jump Attack - Critical hit with 0 sweep AoE"]
+        ExecKinematics["Execute Mechanics - Timing, Bow arc, Kiting"]
+        EvalLocalRules["Local Rules Engine - decideByRules"]
 
         Tick --> RetreatGain
         RetreatGain -->|Cornered| FightBackLock
@@ -111,15 +115,15 @@ flowchart TD
         FightBackLock --> FriendlyProximity
 
         ResolveActive -->|Jev Override Active| FriendlyProximity
-        ResolveActive -->|No Override| EvalLocalRules["Local Rules Engine\n(decideByRules)"]
+        ResolveActive -->|No Override| EvalLocalRules
         EvalLocalRules --> FriendlyProximity
 
         FriendlyProximity -->|Yes| JumpCrit
         FriendlyProximity -->|No| ExecKinematics
     end
 
-    BB -.->|Squad Context & Claims| Trigger
-    BB -.->|Assigned Role & Claims| ResolveActive
+    BB -.->|Squad Context| Trigger
+    BB -.->|Assigned Role| ResolveActive
     SetOverride -.->|Inject High-Level Intent| ResolveActive
     RulesFallback -.->|Clear Override| ResolveActive
 ```
