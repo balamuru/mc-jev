@@ -54,26 +54,76 @@ To augment a human player in real time, you cannot use an LLM as a motor cortex.
 
 The architectural breakthrough in [mc-jev](https://github.com/balamuru/mc-jev) mirrors biological evolution: separate the **fast autonomic nervous system** from the **slower cerebral cortex**.
 
+```mermaid
+flowchart TD
+    subgraph SquadCoord["Multi-Agent Swarm (Blackboard Loop)"]
+        BB[("Shared Blackboard\n• Target Claims\n• Squad Health & Gear\n• Observed Threats")]
+        Coord["Squad Coordinator (Jev)\nRuns every 4000ms"]
+        Directives["Squad Directives\n• Focus Target\n• Roles: Tank / Ranged / Support / Fighter"]
+        Claims["Target Claim Manager\nAnti-Dogpiling Lock (TTL: 8s)"]
+        Provocation["Provocation Dispatcher\nOwner/Ally Hurt Event"]
+
+        BB -->|Snapshot| Coord
+        Coord -->|Assigns| Directives
+        Directives -->|Updates| BB
+        Claims <-->|Lock / Release| BB
+        Provocation -->|Broadcast Hostile| BB
+    end
+
+    subgraph StrategicBrain["Strategic Layer (Jev System 1 Decision Pipeline)"]
+        Trigger{"Trigger Event?\n• Timer (2000ms)\n• hurt / lowHp / newThreat"}
+        GatewayCheck{"Gateway Check\nBudget & Rate Limit OK?"}
+        JevCall["Jev Model Call (~270ms)\n• tactic (engage/retreat/ignore)\n• target selection\n• threat_level (0-3)\n• ambush probability"]
+        StaleCheck{"Stale Check\nHP dropped >= 5\nin-flight?"}
+        PolicyGate{"Confidence & Safety Gate\n(decideWithJev)"}
+        SetOverride["Set Intent Override\n(TTL: 3000ms)"]
+        RulesFallback["Fallback to Deterministic Rules\n(decideByRules)"]
+
+        Trigger -->|Yes| GatewayCheck
+        GatewayCheck -->|Passed| JevCall
+        GatewayCheck -->|Throttled / Over Budget| RulesFallback
+        JevCall --> StaleCheck
+        StaleCheck -->|Fresh| PolicyGate
+        StaleCheck -->|Dropped (Stale)| RulesFallback
+
+        PolicyGate -->|HP <= retreatHp| HardRetreat["Enforce Rules Retreat (Safety Floor)"]
+        PolicyGate -->|Threat >= 2.5 or Ambush >= 0.85| JevRetreat["Retreat Intent (Cautious >= 0.5)"]
+        PolicyGate -->|Engage with Act >= 0.7| JevEngage["Engage Target (Overrules Rules)"]
+        PolicyGate -->|Low Confidence| RulesFallback
+
+        HardRetreat --> SetOverride
+        JevRetreat --> SetOverride
+        JevEngage --> SetOverride
+    end
+
+    subgraph ReflexKinematics["Fast Reflex Loop (50ms / 20 Hz Physics Tick)"]
+        Tick(["physicsTick (50ms)"])
+        RetreatGain{"Failed Retreat?\nGain < 1.5 blocks"}
+        FightBackLock["Fight Back Lock\n(Duration: 4000ms)"]
+        ResolveActive{"Active Intent?"}
+        FriendlyProximity{"Owner / Ally within 2 blocks\n& Sword equipped?"}
+        JumpCrit["Jump Attack\n(Critical hit, 0 sweep AoE)"]
+        ExecKinematics["Execute Mechanics\n• 13-tick weapon charge\n• Arrow ballistics & lead\n• Creeper hit-and-run kiting\n• Auto-eat when safe"]
+
+        Tick --> RetreatGain
+        RetreatGain -->|Cornered| FightBackLock
+        RetreatGain -->|Escaping OK| ResolveActive
+        FightBackLock --> FriendlyProximity
+
+        ResolveActive -->|Jev Override Active| FriendlyProximity
+        ResolveActive -->|No Override| EvalLocalRules["Local Rules Engine\n(decideByRules)"]
+        EvalLocalRules --> FriendlyProximity
+
+        FriendlyProximity -->|Yes| JumpCrit
+        FriendlyProximity -->|No| ExecKinematics
+    end
+
+    BB -.->|Squad Context & Claims| Trigger
+    BB -.->|Assigned Role & Claims| ResolveActive
+    SetOverride -.->|Inject High-Level Intent| ResolveActive
+    RulesFallback -.->|Clear Override| ResolveActive
 ```
-                 ┌─────────────────────────── BotAgent ────────────────────────────┐
- Minecraft  ◄──► │ Mineflayer Bot                                                  │
- Server          │   │ game events (entityHurt, health, entitySpawn…)              │
-                 │   ▼                                                             │
-                 │ observe() ──► Snapshot ────┬──────────────► Reflex Layer        │
-                 │                            │                • 20 Hz (50ms tick) │
-                 │                            │                • Zero network wait │
-                 │                            │                • Pure physics code │
-                 │                            │                  ▲                 │
-                 │                            ▼                  │ current Intent  │
-                 │                    Strategic Scheduler        │                 │
-                 │                    (Periodic + Event Triggers)│                 │
-                 │                            │                  │                 │
-                 │                            ▼                  │                 │
-                 │                 JevGateway (Budget/Limits) ──► Policy Gate      │
-                 └────────────────────────────┼──────────────────▲─────────────────┘
-                                              ▼                  │
-                                TypeSafe Jev (via OpenRouter) ───┘
-```
+
 
 ### 1. The 50ms Reflex Layer (Pure Deterministic Code)
 The reflex layer runs locally on every single `physicsTick`. It **never** waits on network I/O. Its job is purely mechanical execution:
