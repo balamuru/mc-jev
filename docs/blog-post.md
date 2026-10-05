@@ -172,6 +172,53 @@ In `mc-jev`:
 2. **Dynamic Combat Roles:** Every 4 seconds, the squad coordinator assesses the board and prompts Jev to assign roles (`tank`, `ranged`, `support`, `fighter`) tailored to the encounter.
 3. **Player Bodyguarding:** When a hostile player attacks the owner, a `provoked` event floods the board, mobilizing the entire squad in unified retaliation.
 
+### Monitoring & Observing the Blackboard
+
+A common question with shared state systems is: *Does the blackboard bloat over time, and how do we monitor what's inside it?*
+
+#### 1. Zero Bloat: Active Sliding-Window Eviction
+The blackboard is **not** an append-only log; it is an ephemeral, strictly bounded cache. Before every read and write, an automatic `prune()` cycle executes hard deletions:
+* **Hostile Threats:** Forgotten if no bot has seen them for **5 seconds** (`threatTtlMs`). When a mob is slain or despawns, its entry is permanently deleted from the map.
+* **Target Claims:** Expire after **8 seconds** (`claimTtlMs`) unless actively refreshed by the fighting bot.
+* **Squad Directives & Roles:** Expire after **6 seconds** (`directiveTtlMs`).
+* **Bot Teammates:** Bounded strictly by the number of configured bots ($N$). If a bot drops offline, it is purged after **10 seconds** of silence.
+
+During quiet exploration, the blackboard holds **zero threats and zero claims**—keeping memory usage flat even over multi-day sessions.
+
+#### 2. Observing the Blackboard Live
+You can inspect the blackboard through three practical methods:
+
+* **Direct API Queries:** The running application exposes `app.board` ([`src/swarm/blackboard.ts`](file:///home/vinayb/CodeProjects/mc-jev/src/swarm/blackboard.ts)):
+  ```typescript
+  // Who is fighting what right now?
+  const claims = app.board.liveClaims(); 
+  // => [{ targetId: 104, agent: 'Alpha', kind: 'creeper', claimedAt: ... }]
+
+  // What threats are currently tracked across all squad members?
+  const threats = app.board.knownThreats(); 
+  // => [{ id: 104, kind: 'creeper', position: {...}, seenBy: ['Alpha', 'Bravo'] }]
+
+  // Squad focus target (if assigned by coordinator)
+  const focus = app.board.focusTarget(); // => 104
+  ```
+
+* **Live Event Stream Tapping:** Because the blackboard is populated entirely from bus events, you can tap into the real-time event stream anywhere in code:
+  ```typescript
+  app.swarm?.bus.subscribe('*', (event) => {
+    console.log(`[SWARM EVENT: ${event.type}]`, event);
+  });
+  ```
+
+* **Command-Line Telemetry:** Every coordinator evaluation logs a full snapshot of squad state to `logs/decisions-YYYY-MM-DD.jsonl`. You can stream squad state directly from your terminal using `jq`:
+  ```bash
+  tail -f logs/decisions-*.jsonl | jq 'select(.agent=="coordinator") | {
+    time: .timestamp,
+    focus: .intent.targetId,
+    roles: .squad.roles,
+    activeThreats: .squad.threatsCount
+  }'
+  ```
+
 ---
 
 ## The LangGraph Roadmap: How to Model This in a Graph
