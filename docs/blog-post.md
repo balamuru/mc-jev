@@ -135,36 +135,26 @@ flowchart TD
 
 ---
 
-## Multi-Agent Squads: Why Blackboard over LangGraph?
+## Multi-Agent Squads: Classic Blackboard Architecture & The LangGraph Roadmap
 
-A single companion is cool. A synchronized tactical squad is game-changing. But building a multi-agent system in a real-time game raises an architectural question:
+A single companion is cool. A synchronized tactical squad is game-changing. 
 
-### Do we use LangGraph in this project?
-**No. LangGraph is not used in mc-jev, though it shares similar conceptual roots.**
+To coordinate multiple bots without dogpiling the same zombie or shooting each other, [mc-jev](https://github.com/balamuru/mc-jev) uses a **Blackboard Architecture**. 
 
-Developers familiar with multi-agent orchestration naturally wonder if frameworks like LangGraph fit here. LangGraph itself is a powerful, deterministic state machine (inspired by Google's Pregel graph model). A deterministic node in LangGraph executes in microseconds with zero latency.
+### What is "Blackboard Architecture"? Is it special to Jev?
+Not at all. **Blackboard Architecture is one of the classical, foundational design patterns in artificial intelligence**, first formulated in 1975 for the **Hearsay-II** speech-understanding system at Carnegie Mellon University.
 
-The reason `mc-jev` does not use LangGraph isn't graph execution speed—it comes down to **execution models, dependency weight, and architectural fit**:
+The metaphor is intuitive: imagine a group of human specialists standing around a physical blackboard. 
+1. None of the specialists talk to each other directly.
+2. When a specialist makes an observation or deduces a fact, they write it on the board.
+3. Other specialists watch the board, react to new information, and write their own updates.
 
-| Dimension | LangGraph State Graph | mc-jev Blackboard Architecture |
-| :--- | :--- | :--- |
-| **Execution Model** | Synchronized Pregel supersteps | **Decoupled asynchronous clocks** (50ms physics tick vs. async Jev evaluation) |
-| **State Storage** | Graph channels, state reducers, checkpointing | **In-memory blackboard** with target claims and TTLs |
-| **Overhead** | Framework runtime, graph compilation | **Zero dependencies** (~45-line event bus, ~100-line blackboard) |
-| **Core Superpowers** | Time-travel debugging, Postgres persistence, Human-in-the-loop | **Ephemeral real-time combat**, sub-tick safety overrides |
-| **AI Integration** | Conversational LLMs with iterative tool loops | **Fast typed System 1 models (Jev)** called out-of-band |
-
-1. **Decoupled Clocks vs. Supersteps:** LangGraph processes state transitions in synchronized steps (all nodes compute $\to$ write state $\to$ evaluate conditional edges). Minecraft bots, however, have two decoupled cadences: the local 50ms physics tick *must never pause*, while the strategic Jev loop runs asynchronously in the background. An in-memory event bus and an intent cache fit this pattern far more naturally than stepping a formal graph.
-2. **Minimalism:** Multi-agent squad coordination in `mc-jev` only requires a pub/sub event bus ([`src/swarm/bus.ts`](file:///home/vinayb/CodeProjects/mc-jev/src/swarm/bus.ts)) and a shared state store ([`src/swarm/blackboard.ts`](file:///home/vinayb/CodeProjects/mc-jev/src/swarm/blackboard.ts)). Plain TypeScript functions deliver microsecond speed without graph compilation boilerplate.
-3. **No Need for Persistence:** LangGraph shines when pausing workflows for human approval or saving conversation threads to databases. In fast-paced Minecraft combat, past ticks are discarded instantly.
-
-### The Real-Time Solution: In-Process Event Bus & Blackboard
-Instead of heavy agent graphs, [mc-jev](https://github.com/balamuru/mc-jev) implements a lightweight **Blackboard Architecture** inspired by autonomous robotics:
+For fifty years, this pattern has powered autonomous robotics, submarine sonar tracking, aerospace systems, and game AI because it completely decouples agents:
 
 ```mermaid
 flowchart TD
     Bots["Bot Agents: Alpha, Bravo, Charlie"] -->|Publish: HP, gear, visible threats| Bus["In-Process JSON Event Bus"]
-    Bus --> Blackboard[("Shared Blackboard")]
+    Bus --> Blackboard[("Shared Blackboard\n• Active target claims\n• Teammate HP & gear\n• Known hostiles")]
 
     Blackboard --> Coordinator["Squad Coordinator (Runs every 4s)"]
     Coordinator -->|Asks Jev| Roles["Assign Directives:\n• Squad Focus Target\n• Roles: Tank, Ranged, Support, Fighter"]
@@ -177,16 +167,76 @@ flowchart TD
     Retaliate -->|Broadcasts Hostile Player| Bus
 ```
 
-1. **The Blackboard & Target Claims:**
-   Bots broadcast JSON events (`heartbeat`, `threats`, `claim`, `damaged`, `provoked`) over an in-process bus. When Bot A attacks a zombie, it claims that target with an 8-second TTL. Other bots inspect the blackboard, see the claim, and immediately select unallocated threats.
-2. **Dynamic Combat Roles:**
-   Every 4 seconds, a lightweight coordinator queries Jev to assess squad health and assign roles:
-   * **The Tank:** Pinpoints the teammate with the lowest HP and intercepts threats bearing down on them.
-   * **The Ranged Sniper:** Holds distance at 12 blocks, prioritizing creepers and archers.
-   * **The Support:** Rushes to hurt allies before engaging solo threats.
-   * **The Fighter:** High-mobility frontliner dealing raw melee damage.
-3. **Player Bodyguarding:**
-   When an unknown player attacks you, the `ProvocationTracker` fires a `provoked` event across the bus, triggering an immediate, unified counterattack by the entire squad.
+In `mc-jev`:
+1. **Target Claims:** When Bot A engages a zombie, it writes a `claim` to the blackboard with an 8-second TTL. Bots B and C see the claim on the board and immediately target other hostiles.
+2. **Dynamic Combat Roles:** Every 4 seconds, the squad coordinator assesses the board and prompts Jev to assign roles (`tank`, `ranged`, `support`, `fighter`) tailored to the encounter.
+3. **Player Bodyguarding:** When a hostile player attacks the owner, a `provoked` event floods the board, mobilizing the entire squad in unified retaliation.
+
+---
+
+## The LangGraph Roadmap: How to Model This in a Graph
+
+Could you implement this exact same architecture with **LangGraph**? 
+
+**Yes, absolutely.** In fact, LangGraph and Jev are natural partners. Jev provides fast, typed, sub-penny System 1 model inference ($0.042/1M input tokens), while LangGraph provides declarative state machines, conditional routing, and observability.
+
+Here is the blueprint for how `mc-jev` can be implemented with LangGraph:
+
+### 1. The Strategic Layer as a LangGraph `StateGraph`
+Because LangGraph nodes are standard async functions, a node can call `@typesafe-ai/sdk` just like any other API. The strategic decision pipeline maps cleanly to a compiled graph:
+
+```typescript
+import { StateGraph, Annotation, END, START } from "@langchain/langgraph";
+import { createJevClient } from "./strategic/jev.js";
+import { decideWithJev } from "./strategic/policy.js";
+import { decideByRules } from "./reflex/rules.js";
+
+// Define graph state
+const StrategicState = Annotation.Root({
+  snapshot: Annotation<Snapshot>(),
+  isGatewayOk: Annotation<boolean>(),
+  judgment: Annotation<Judgment | null>(),
+  isStale: Annotation<boolean>(),
+  finalIntent: Annotation<Intent>(),
+});
+
+// Build the workflow
+export const strategicWorkflow = new StateGraph(StrategicState)
+  .addNode("checkGateway", async (state) => ({ 
+    isGatewayOk: gateway.allowCall() 
+  }))
+  .addNode("callJev", async (state) => {
+    const res = await jevClient.ask(buildQuestions(state.snapshot));
+    return { judgment: parseJudgment(res) };
+  })
+  .addNode("checkStaleness", async (state) => ({
+    isStale: (state.snapshot.self.hp - getCurrentHp()) >= 5
+  }))
+  .addNode("policyGate", async (state) => ({
+    finalIntent: decideWithJev(state.judgment!, decideByRules(state.snapshot), state.snapshot).intent
+  }))
+  .addNode("fallbackRules", async (state) => ({
+    finalIntent: decideByRules(state.snapshot)
+  }))
+  
+  // Routing edges
+  .addEdge(START, "checkGateway")
+  .addConditionalEdges("checkGateway", (s) => s.isGatewayOk ? "callJev" : "fallbackRules")
+  .addEdge("callJev", "checkStaleness")
+  .addConditionalEdges("checkStaleness", (s) => s.isStale ? "fallbackRules" : "policyGate")
+  .addEdge("policyGate", END)
+  .addEdge("fallbackRules", END)
+  .compile();
+```
+
+### 2. The 3-Step Implementation Roadmap
+
+* **Phase 1: Out-of-Band StateGraph Execution**
+  Run the compiled `strategicWorkflow` out-of-band in the background on alert triggers (`hurt`, `lowHp`, `newThreat`) or periodic timers. The 50ms reflex loop remains purely local and non-blocking, reading the latest `finalIntent` output emitted by the graph.
+* **Phase 2: Hierarchical Multi-Agent Graph (Squad Supervisor)**
+  Replace the in-process blackboard with a LangGraph multi-agent supervisor graph. A central `CoordinatorNode` processes the combined squad state and routes directives down to individual bot subgraphs.
+* **Phase 3: Visual Observability & Replay via LangSmith**
+  By running through LangGraph, every Jev call, snapshot input, confidence gate branch, and token cost is automatically traced in LangSmith. Developers can visually inspect why a bot chose to retreat, replay historical combat encounters, and benchmark question prompts with zero custom telemetry code.
 
 ---
 
