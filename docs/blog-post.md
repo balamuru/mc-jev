@@ -137,26 +137,29 @@ flowchart TD
 
 ## Multi-Agent Squads: Why Blackboard over LangGraph?
 
-A single companion is cool. A synchronized tactical squad is game-changing. But building a multi-agent system in a real-time game raises an immediate question:
+A single companion is cool. A synchronized tactical squad is game-changing. But building a multi-agent system in a real-time game raises an architectural question:
 
 ### Do we use LangGraph in this project?
-**No. LangGraph is deliberately not used in mc-jev.**
+**No. LangGraph is not used in mc-jev, though it shares similar conceptual roots.**
 
-Developers familiar with multi-agent orchestration naturally wonder if frameworks like LangGraph or LangChain fit here. While LangGraph is powerful for complex, turn-based workflows (like document analysis, coding assistants, or multi-step research agents), it suffers from a fundamental impedance mismatch when applied to real-time gaming:
+Developers familiar with multi-agent orchestration naturally wonder if frameworks like LangGraph fit here. LangGraph itself is a powerful, deterministic state machine (inspired by Google's Pregel graph model). A deterministic node in LangGraph executes in microseconds with zero latency.
 
-| Dimension | LangGraph / Turn-Based Frameworks | The mc-jev Architecture |
+The reason `mc-jev` does not use LangGraph isn't graph execution speed—it comes down to **execution models, dependency weight, and architectural fit**:
+
+| Dimension | LangGraph State Graph | mc-jev Blackboard Architecture |
 | :--- | :--- | :--- |
-| **Control Clock** | Turn-based / Request-driven | **20 Hz (50ms) hard game physics tick** |
-| **Latency Budget** | Seconds (waiting on LLM node resolution) | **0ms local execution**, async 270ms strategic inference |
-| **Model Type** | General LLMs (GPT-4, Claude) with tool calls | **Fast typed System 1 models (Jev)** |
-| **State Structure** | Graph state with message histories & checkpoints | **Ephemeral perception snapshots & JSON event bus** |
-| **Failure Mode** | Graph pauses, retries, or bubbles exceptions | **Seamless instant fallback to deterministic rules** |
-| **Cost Profile** | $0.01 - $0.10+ per agent interaction | **$0.00003 per strategic evaluation** |
+| **Execution Model** | Synchronized Pregel supersteps | **Decoupled asynchronous clocks** (50ms physics tick vs. async Jev evaluation) |
+| **State Storage** | Graph channels, state reducers, checkpointing | **In-memory blackboard** with target claims and TTLs |
+| **Overhead** | Framework runtime, graph compilation | **Zero dependencies** (~45-line event bus, ~100-line blackboard) |
+| **Core Superpowers** | Time-travel debugging, Postgres persistence, Human-in-the-loop | **Ephemeral real-time combat**, sub-tick safety overrides |
+| **AI Integration** | Conversational LLMs with iterative tool loops | **Fast typed System 1 models (Jev)** called out-of-band |
 
-If an agent in a LangGraph graph waits 2 seconds for a graph edge to transition or an LLM tool to parse, your Minecraft bot has already drowned in lava or been blown up by a creeper.
+1. **Decoupled Clocks vs. Supersteps:** LangGraph processes state transitions in synchronized steps (all nodes compute $\to$ write state $\to$ evaluate conditional edges). Minecraft bots, however, have two decoupled cadences: the local 50ms physics tick *must never pause*, while the strategic Jev loop runs asynchronously in the background. An in-memory event bus and an intent cache fit this pattern far more naturally than stepping a formal graph.
+2. **Minimalism:** Multi-agent squad coordination in `mc-jev` only requires a pub/sub event bus ([`src/swarm/bus.ts`](file:///home/vinayb/CodeProjects/mc-jev/src/swarm/bus.ts)) and a shared state store ([`src/swarm/blackboard.ts`](file:///home/vinayb/CodeProjects/mc-jev/src/swarm/blackboard.ts)). Plain TypeScript functions deliver microsecond speed without graph compilation boilerplate.
+3. **No Need for Persistence:** LangGraph shines when pausing workflows for human approval or saving conversation threads to databases. In fast-paced Minecraft combat, past ticks are discarded instantly.
 
 ### The Real-Time Solution: In-Process Event Bus & Blackboard
-Instead of heavy agent graphs, [mc-jev](https://github.com/balamuru/mc-jev) implements a lightweight, zero-dependency **Blackboard Architecture** inspired by autonomous robotics:
+Instead of heavy agent graphs, [mc-jev](https://github.com/balamuru/mc-jev) implements a lightweight **Blackboard Architecture** inspired by autonomous robotics:
 
 ```mermaid
 flowchart TD
